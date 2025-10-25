@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: chatrealm_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chatrealm}
+      POSTGRES_USER: ${POSTGRES_USER:-chatrealm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatrealm_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chatrealm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatrealm_network
+
+  # Redis Cache
+  redis:
+    image: redis:7.2-alpine
+    container_name: chatrealm_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatrealm_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatrealm_backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-chatrealm}:${POSTGRES_PASSWORD:-chatrealm_password}@postgres:5432/${POSTGRES_DB:-chatrealm}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      JANITOR_AI_API_KEY: ${JANITOR_AI_API_KEY:-}
+      JANITOR_AI_BASE_URL: ${JANITOR_AI_BASE_URL:-https://janitorai.com/hackathon}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:80}
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chatrealm_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: chatrealm_frontend
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - chatrealm_network
+    command: npm run dev -- --host
+
+  # Nginx Reverse Proxy
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: chatrealm_nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - chatrealm_network
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  chatrealm_network:
+    driver: bridge
+

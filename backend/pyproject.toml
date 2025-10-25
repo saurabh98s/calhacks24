@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "chatrealm-backend"
+version = "0.1.0"
+description = "ChatRealm multiplayer AI chat arena backend"
+authors = ["ChatRealm Team"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+python-socketio = "^5.10.0"
+pydantic = "^2.5.0"
+sqlalchemy = "^2.0.23"
+redis = "^5.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
