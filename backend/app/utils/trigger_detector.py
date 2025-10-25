@@ -32,7 +32,7 @@ class TriggerDetector:
             }
         
         # 2. User confusion detected
-        confusion_phrases = ["confused", "don't understand", "lost", "unclear", "help"]
+        confusion_phrases = ["confused", "don't understand", "lost", "unclear", "help", "what do", "how do"]
         if any(phrase in message_lower for phrase in confusion_phrases):
             return {
                 "type": "user_confusion",
@@ -41,13 +41,14 @@ class TriggerDetector:
                 "context": "User expressed confusion or need for help"
             }
         
-        # 3. Question asked
-        if "?" in message:
+        # 3. Question asked (questions are important!)
+        question_indicators = ["?", "what", "why", "how", "when", "where", "who", "can you"]
+        if any(indicator in message_lower for indicator in question_indicators):
             return {
                 "type": "question_asked",
-                "priority": "medium",
+                "priority": "high",  # Changed from medium to high - questions should be answered!
                 "target_user": user_state.get("user_id"),
-                "context": "User asked a question"
+                "context": "User asked a question and needs an answer"
             }
         
         return None
@@ -76,13 +77,14 @@ class TriggerDetector:
     
     @staticmethod
     def check_new_user(user_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Check if user just joined"""
+        """Check if user just joined - ALWAYS trigger welcome for new users"""
         if user_state.get("is_new_to_room", False):
+            username = user_state.get("name", "User")
             return {
                 "type": "new_user_joined",
                 "priority": "high",
                 "target_user": user_state.get("user_id"),
-                "context": "New user just entered the room"
+                "context": f"{username} just entered the room and needs to be welcomed and looped into the conversation"
             }
         
         return None

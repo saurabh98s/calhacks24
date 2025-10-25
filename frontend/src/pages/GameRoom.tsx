@@ -22,7 +22,7 @@ export default function GameRoom() {
   const navigate = useNavigate()
   
   const { user, token } = useAuthStore()
-  const { currentRoom, setCurrentRoom, messages, addMessage, setMessages, activeUsers, setActiveUsers } = useRoomStore()
+  const { currentRoom, setCurrentRoom, messages, addMessage, setMessages, activeUsers, setActiveUsers, addTypingUser, removeTypingUser, typingUsers } = useRoomStore()
   const { addAvatar, removeAvatar, updateAvatarPosition, clearAvatars } = useGameStore()
   
   const [scene, setScene] = useState<GameScene | null>(null)
@@ -47,53 +47,39 @@ export default function GameRoom() {
 
   const initializeRoom = async () => {
     try {
-      console.log('🚀 Initializing room:', roomId)
-      
       // Load room data
       const room = await apiService.getRoom(roomId!)
-      console.log('✅ Room loaded:', room)
       setCurrentRoom(room)
 
-      // Connect socket and wait for connection
+      // Connect socket FIRST and wait for connection
       if (!socketInitialized.current) {
-        console.log('🔌 Connecting to WebSocket...')
         const socket = socketService.connect(token!)
         
         // Wait for socket to connect
         await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Socket connection timeout'))
-          }, 5000)
+          const timeout = setTimeout(() => reject(new Error('Socket connection timeout')), 5000)
 
-          socket.on('connect', () => {
-            console.log('✅ Socket connected')
-            clearTimeout(timeout)
-            resolve()
-          })
-
-          socket.on('connect_error', (err: any) => {
-            console.error('❌ Socket connection error:', err)
-            clearTimeout(timeout)
-            reject(err)
-          })
-
-          // If already connected, resolve immediately
           if (socket.connected) {
-            console.log('✅ Socket already connected')
             clearTimeout(timeout)
             resolve()
+          } else {
+            socket.once('connect', () => {
+              clearTimeout(timeout)
+              resolve()
+            })
+            socket.once('connect_error', (err: any) => {
+              clearTimeout(timeout)
+              reject(err)
+            })
           }
         })
 
+        // Setup socket listeners AFTER connection is established
         setupSocketListeners()
         socketInitialized.current = true
       }
 
-      // Small delay to ensure socket is ready
-      await new Promise(resolve => setTimeout(resolve, 500))
-
       // Join room via socket
-      console.log('🚪 Joining room via socket...')
       socketService.joinRoom({
         room_id: roomId!,
         user_id: user!.id,
@@ -104,79 +90,70 @@ export default function GameRoom() {
 
       setLoading(false)
     } catch (err: any) {
-      console.error('❌ Failed to initialize room:', err)
+      console.error('Failed to initialize room:', err)
       setError(err.message || 'Failed to load room')
       setLoading(false)
     }
   }
 
   const setupSocketListeners = () => {
-    // Connection events
-    socketService.on('connect', () => {
-      console.log('✅ Connected to server')
-    })
-
-    socketService.on('disconnect', () => {
-      console.log('❌ Disconnected from server')
-    })
-
     // Room joined
     socketService.on('room_joined', (data: any) => {
-      console.log('🚪 Joined room:', data)
-      
-      // Load conversation history
-      if (data.conversation_history) {
+      if (data.conversation_history && Array.isArray(data.conversation_history)) {
         setMessages(data.conversation_history)
       }
-      
-      // Set active users
-      if (data.active_users) {
+      if (data.active_users && Array.isArray(data.active_users)) {
         setActiveUsers(data.active_users)
       }
     })
 
     // User joined
     socketService.on('user_joined', (data: any) => {
-      console.log('👤 User joined:', data)
-      
-      // Add avatar to game
       if (scene && data.user_id !== user!.id) {
         scene.addAvatar(
           data.user_id,
           data.username,
-          data.avatar_style,
-          data.avatar_color,
+          data.avatar_style || 'human',
+          data.avatar_color || 'blue',
           400,
           300
         )
       }
-      
-      // Update active users list
-      setActiveUsers([...activeUsers, data.user_id])
+      setActiveUsers(prev => [...prev, data.user_id])
     })
 
     // User left
     socketService.on('user_left', (data: any) => {
-      console.log('👋 User left:', data)
-      
-      // Remove avatar from game
       if (scene) {
         scene.removeAvatar(data.user_id)
       }
-      
-      // Update active users list
-      setActiveUsers(activeUsers.filter(id => id !== data.user_id))
+      setActiveUsers(prev => prev.filter(id => id !== data.user_id))
     })
 
-    // New message
+    // New message - CRITICAL: This must trigger UI update
     socketService.on('new_message', (message: Message) => {
-      console.log('💬 New message:', message)
-      addMessage(message)
+      console.log('📨 Received new_message event:', message)
+      
+      const formattedMessage: Message = {
+        message_id: message.message_id || `msg_${Date.now()}_${Math.random()}`,
+        room_id: message.room_id || roomId || '',
+        user_id: message.user_id,
+        username: message.username || 'Unknown',
+        content: message.content || message.message || '',
+        message: message.message || message.content || '',
+        message_type: message.message_type || 'user',
+        timestamp: message.timestamp || new Date().toISOString(),
+      }
+      
+      console.log('✅ Adding message to store:', formattedMessage.message_id)
+      
+      // Add message to store (will check for duplicates)
+      addMessage(formattedMessage)
       
       // Show speech bubble in game
       if (scene) {
-        const content = message.message || message.content || ''
-        scene.showSpeechBubble(message.user_id || 'ai', content, 3000)
+        const userId = formattedMessage.user_id || 'ai'
+        scene.showSpeechBubble(userId, formattedMessage.message, 3000)
       }
     })
 
@@ -187,18 +164,44 @@ export default function GameRoom() {
       }
     })
 
+    // Typing indicator
+    socketService.on('user_typing', (data: any) => {
+      console.log('👀 Typing event received:', data)
+      console.log('Current user:', user!.username)
+      
+      if (data.username !== user!.username) {
+        console.log('✅ Different user, updating typing state:', data.is_typing)
+        if (data.is_typing) {
+          addTypingUser(data.username)
+          console.log('Added typing user:', data.username)
+        } else {
+          removeTypingUser(data.username)
+          console.log('Removed typing user:', data.username)
+        }
+      } else {
+        console.log('⚠️ Same user, ignoring typing event')
+      }
+    })
+
     // Error
     socketService.on('error', (data: any) => {
-      console.error('Socket error:', data)
       setError(data.message)
     })
   }
 
   const cleanup = () => {
-    // Don't disconnect socket, just clean up local state
+    // Leave room
+    if (roomId && user) {
+      socketService.leaveRoom(roomId, user.id)
+    }
+    
+    // Clean up local state
     clearAvatars()
     setMessages([])
     setCurrentRoom(null)
+    
+    // Mark as not initialized so listeners can be set up again on next mount
+    socketInitialized.current = false
   }
 
   const handleMove = (position: Position) => {
@@ -212,12 +215,18 @@ export default function GameRoom() {
   }
 
   const handleSendMessage = (message: string) => {
-    if (!socketService.isConnected() || !roomId) return
+    if (!socketService.isConnected() || !roomId || !user) {
+      console.error('Cannot send message: socket not connected or missing data')
+      return
+    }
 
+    console.log('📤 Sending message:', message)
+
+    // Send to server (server will broadcast to all including sender)
     socketService.sendMessage({
       room_id: roomId,
-      user_id: user!.id,
-      username: user!.username,
+      user_id: user.id,
+      username: user.username,
       message,
     })
   }
@@ -325,6 +334,7 @@ export default function GameRoom() {
             onSendMessage={handleSendMessage}
             onTyping={handleTyping}
             currentUsername={user.username}
+            typingUsers={typingUsers}
           />
         </motion.div>
 

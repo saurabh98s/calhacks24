@@ -16,7 +16,18 @@ class ContextManager:
     
     @staticmethod
     async def initialize_user_context(user_id: str, username: str, room_id: str, user_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize user context when joining a room"""
+        """Initialize user context when joining a room - check for existing session"""
+        # Check if user has existing context (session management)
+        existing_context = await redis_client.get_user_context(user_id)
+        
+        if existing_context and existing_context.get("current_room") == room_id:
+            # User is rejoining within session expiry (1 hour)
+            existing_context["is_new_to_room"] = False
+            existing_context["rejoined_at"] = datetime.utcnow().isoformat()
+            await redis_client.set_user_context(user_id, existing_context, ttl=3600)
+            return existing_context
+        
+        # Create new context for new user or expired session
         context = {
             "user_id": user_id,
             "name": username,
@@ -25,6 +36,7 @@ class ContextManager:
             "current_room": room_id,
             "joined_at": datetime.utcnow().isoformat(),
             "is_new_to_room": True,
+            "session_id": f"session_{user_id}_{int(datetime.utcnow().timestamp())}",
             
             # Emotional State
             "sentiment": {
@@ -50,7 +62,8 @@ class ContextManager:
             }
         }
         
-        await redis_client.set_user_context(user_id, context)
+        # Store with 1 hour TTL (session expiry)
+        await redis_client.set_user_context(user_id, context, ttl=3600)
         return context
     
     @staticmethod

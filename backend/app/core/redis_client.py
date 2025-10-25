@@ -31,10 +31,11 @@ class RedisClient:
     
     # User Context Methods
     async def set_user_context(self, user_id: str, context: dict, ttl: int = 3600):
-        """Store user context in Redis"""
+        """Store user context in Redis with 1 hour expiry"""
         if self.redis is None:
             await self.connect()
         key = f"user_context:{user_id}"
+        # Set session expiry to 1 hour (3600 seconds)
         await self.redis.setex(key, ttl, json.dumps(context))
     
     async def get_user_context(self, user_id: str) -> Optional[dict]:

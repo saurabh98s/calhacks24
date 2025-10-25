@@ -26,50 +26,23 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('✅ Socket connected, ID:', this.socket?.id)
-      this.emit('connect')
     })
 
     this.socket.on('disconnect', (reason) => {
       console.log('❌ Socket disconnected, reason:', reason)
-      this.emit('disconnect')
     })
 
     this.socket.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error)
-      this.emit('error', { message: error.message })
     })
 
     this.socket.on('error', (data) => {
       console.error('❌ Socket error:', data)
-      this.emit('error', data)
     })
-
-    this.socket.on('user_joined', (data) => {
-      console.log('👤 User joined:', data)
-      this.emit('user_joined', data)
-    })
-
-    this.socket.on('user_left', (data) => {
-      console.log('👋 User left:', data)
-      this.emit('user_left', data)
-    })
-
-    this.socket.on('new_message', (message: Message) => {
-      console.log('💬 New message:', message)
-      this.emit('new_message', message)
-    })
-
-    this.socket.on('user_typing', (data) => {
-      this.emit('user_typing', data)
-    })
-
-    this.socket.on('avatar_moved', (data) => {
-      this.emit('avatar_moved', data)
-    })
-
-    this.socket.on('room_joined', (data) => {
-      console.log('🚪 Room joined:', data)
-      this.emit('room_joined', data)
+    
+    // Register catch-all listener for debugging
+    this.socket.onAny((eventName, ...args) => {
+      console.log(`🔔 Socket.IO event received: ${eventName}`, args)
     })
 
     return this.socket
@@ -119,8 +92,9 @@ class SocketService {
       console.error('Cannot send message: Socket not connected')
       throw new Error('Socket not connected')
     }
-    console.log('📤 Sending message:', data)
+    console.log('📤 Sending message via socket:', this.socket.id, data)
     this.socket.emit('send_message', data)
+    console.log('✅ Message emitted to server')
   }
 
   sendTyping(data: {
@@ -145,12 +119,39 @@ class SocketService {
     this.socket.emit('move_avatar', data)
   }
 
-  // Event listener management
+  leaveRoom(roomId: string, userId: string) {
+    if (!this.socket) return
+    this.socket.emit('leave_room', { room_id: roomId, user_id: userId })
+  }
+
+  // Event listener management - register directly on socket
   on(event: string, callback: Function) {
+    if (!this.socket) {
+      console.warn(`Cannot register listener for '${event}': socket not initialized`)
+      return
+    }
+
+    // Track callbacks to prevent duplicates
     if (!this.listeners.has(event)) {
       this.listeners.set(event, [])
     }
-    this.listeners.get(event)!.push(callback)
+    
+    const callbacks = this.listeners.get(event)!
+    if (callbacks.includes(callback)) {
+      console.log(`⚠️ Listener for '${event}' already registered, skipping`)
+      return
+    }
+    
+    callbacks.push(callback)
+    
+    // Register directly on socket.io with wrapper for debugging
+    const wrappedCallback = (...args: any[]) => {
+      console.log(`🎯 Event '${event}' triggered with data:`, args)
+      callback(...args)
+    }
+    
+    this.socket.on(event, wrappedCallback as any)
+    console.log(`✅ Registered listener for: ${event}, socket ID: ${this.socket.id}`)
   }
 
   off(event: string, callback: Function) {
@@ -161,9 +162,14 @@ class SocketService {
         callbacks.splice(index, 1)
       }
     }
+    
+    if (this.socket) {
+      this.socket.off(event, callback as any)
+    }
   }
 
   private emit(event: string, data?: any) {
+    // This is for our custom events, not socket.io events
     const callbacks = this.listeners.get(event)
     if (callbacks) {
       callbacks.forEach(callback => callback(data))

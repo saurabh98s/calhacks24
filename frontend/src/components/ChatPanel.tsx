@@ -8,9 +8,10 @@ interface ChatPanelProps {
   onSendMessage: (message: string) => void
   onTyping: (isTyping: boolean) => void
   currentUsername: string
+  typingUsers?: string[]
 }
 
-export const ChatPanel = ({ messages, onSendMessage, onTyping, currentUsername }: ChatPanelProps) => {
+export const ChatPanel = ({ messages, onSendMessage, onTyping, currentUsername, typingUsers = [] }: ChatPanelProps) => {
   const [inputMessage, setInputMessage] = useState('')
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -19,6 +20,11 @@ export const ChatPanel = ({ messages, onSendMessage, onTyping, currentUsername }
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Debug: Log typing users when they change
+  useEffect(() => {
+    console.log('💬 ChatPanel typingUsers changed:', typingUsers)
+  }, [typingUsers])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -80,39 +86,89 @@ export const ChatPanel = ({ messages, onSendMessage, onTyping, currentUsername }
         <h2 className="text-lg font-semibold text-white">Chat</h2>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-        <AnimatePresence>
-          {messages.map((message) => (
-            <motion.div
-              key={message.message_id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className={`max-w-[80%] px-4 py-2 rounded-lg border ${getMessageStyle(message)}`}
-            >
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-sm font-semibold text-white">
-                  {message.username}
-                </span>
-                {message.message_type === 'ai' && (
-                  <span className="text-xs text-purple-400">AI</span>
-                )}
-                <span className="text-xs text-gray-400 ml-auto">
-                  {new Date(message.timestamp).toLocaleTimeString([], { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                  })}
-                </span>
-              </div>
-              <p className="text-sm text-gray-200">
-                {message.message || message.content}
-              </p>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+      {/* Messages - Scrollable Container */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+        {messages.length === 0 ? (
+          <div className="text-center text-gray-400 py-8">
+            No messages yet. Start the conversation!
+          </div>
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {messages.map((message, index) => (
+              <motion.div
+                key={`${message.message_id}-${index}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className={`max-w-[80%] px-4 py-2 rounded-lg border ${getMessageStyle(message)}`}
+              >
+                <div className="flex items-baseline gap-2 mb-1">
+                  <span className="text-sm font-semibold text-white">
+                    {message.username}
+                  </span>
+                  {message.message_type === 'ai' && (
+                    <span className="text-xs text-purple-400">AI</span>
+                  )}
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {new Date(message.timestamp).toLocaleTimeString([], { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-200 break-words">
+                  {message.message || message.content}
+                </p>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Typing Indicator */}
+      <AnimatePresence>
+        {typingUsers.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-4 py-2 border-t border-gray-700/50"
+          >
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <div className="flex gap-1">
+                <motion.span
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                >
+                  •
+                </motion.span>
+                <motion.span
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
+                >
+                  •
+                </motion.span>
+                <motion.span
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.6 }}
+                >
+                  •
+                </motion.span>
+              </div>
+              <span>
+                {typingUsers.length === 1 
+                  ? `${typingUsers[0]} is typing...`
+                  : typingUsers.length === 2
+                  ? `${typingUsers[0]} and ${typingUsers[1]} are typing...`
+                  : `${typingUsers[0]} and ${typingUsers.length - 1} others are typing...`
+                }
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Input */}
       <div className="px-4 py-3 border-t border-gray-700">
