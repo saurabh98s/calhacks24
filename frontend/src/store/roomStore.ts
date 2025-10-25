@@ -1,11 +1,20 @@
 import { create } from 'zustand'
 import { Room, Message } from '../types'
 
+interface UserMetadata {
+  user_id: string
+  username: string
+  avatar_style: string
+  avatar_color: string
+  mood_icon?: string
+}
+
 interface RoomState {
   currentRoom: Room | null
   rooms: Room[]
   messages: Message[]
   activeUsers: string[]
+  activeUsersMetadata: Map<string, UserMetadata>
   typingUsers: string[]
   
   setCurrentRoom: (room: Room | null) => void
@@ -13,6 +22,9 @@ interface RoomState {
   addMessage: (message: Message) => void
   setMessages: (messages: Message[]) => void
   setActiveUsers: (users: string[]) => void
+  setActiveUsersMetadata: (metadata: UserMetadata[]) => void
+  addUserMetadata: (metadata: UserMetadata) => void
+  removeUserMetadata: (userId: string) => void
   addTypingUser: (username: string) => void
   removeTypingUser: (username: string) => void
   clearMessages: () => void
@@ -23,6 +35,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   rooms: [],
   messages: [],
   activeUsers: [],
+  activeUsersMetadata: new Map(),
   typingUsers: [],
   
   setCurrentRoom: (room) => set({ currentRoom: room }),
@@ -62,23 +75,33 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   
   setActiveUsers: (users) => set({ activeUsers: Array.isArray(users) ? users : [] }),
   
-  addTypingUser: (username) => {
-    console.log('🔵 roomStore.addTypingUser called with:', username)
-    set((state) => {
-      const newTypingUsers = [...new Set([...state.typingUsers, username])]
-      console.log('🔵 New typingUsers state:', newTypingUsers)
-      return { typingUsers: newTypingUsers }
+  setActiveUsersMetadata: (metadata) => {
+    const map = new Map<string, UserMetadata>()
+    metadata.forEach(user => {
+      map.set(user.user_id, user)
     })
+    set({ activeUsersMetadata: map })
   },
   
-  removeTypingUser: (username) => {
-    console.log('🔴 roomStore.removeTypingUser called with:', username)
-    set((state) => {
-      const newTypingUsers = state.typingUsers.filter(u => u !== username)
-      console.log('🔴 New typingUsers state:', newTypingUsers)
-      return { typingUsers: newTypingUsers }
-    })
-  },
+  addUserMetadata: (metadata) => set((state) => {
+    const newMap = new Map(state.activeUsersMetadata)
+    newMap.set(metadata.user_id, metadata)
+    return { activeUsersMetadata: newMap }
+  }),
+  
+  removeUserMetadata: (userId) => set((state) => {
+    const newMap = new Map(state.activeUsersMetadata)
+    newMap.delete(userId)
+    return { activeUsersMetadata: newMap }
+  }),
+  
+  addTypingUser: (username) => set((state) => ({
+    typingUsers: [...new Set([...state.typingUsers, username])]
+  })),
+  
+  removeTypingUser: (username) => set((state) => ({
+    typingUsers: state.typingUsers.filter(u => u !== username)
+  })),
   
   clearMessages: () => set({ messages: [] }),
 }))

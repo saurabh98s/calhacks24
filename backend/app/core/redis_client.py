@@ -115,6 +115,13 @@ class RedisClient:
         messages = await self.redis.lrange(key, 0, limit - 1)
         return [json.loads(msg) for msg in messages]
     
+    async def delete_conversation_history(self, room_id: str):
+        """Delete conversation history for a room"""
+        if self.redis is None:
+            await self.connect()
+        key = f"room_history:{room_id}"
+        await self.redis.delete(key)
+    
     # Session Management
     async def set_session(self, session_id: str, data: dict, ttl: int = 86400):
         """Store session data"""

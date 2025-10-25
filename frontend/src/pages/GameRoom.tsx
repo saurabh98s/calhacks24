@@ -6,6 +6,7 @@ import { ArrowLeft, Users as UsersIcon } from 'lucide-react'
 import { GameCanvas } from '../components/GameCanvas'
 import { ChatPanel } from '../components/ChatPanel'
 import { UserList } from '../components/UserList'
+import { ActiveUsersPanel } from '../components/ActiveUsersPanel'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 
 import { useAuthStore } from '../store/authStore'
@@ -22,7 +23,7 @@ export default function GameRoom() {
   const navigate = useNavigate()
   
   const { user, token } = useAuthStore()
-  const { currentRoom, setCurrentRoom, messages, addMessage, setMessages, activeUsers, setActiveUsers, addTypingUser, removeTypingUser, typingUsers } = useRoomStore()
+  const { currentRoom, setCurrentRoom, messages, addMessage, setMessages, activeUsers, setActiveUsers, activeUsersMetadata, setActiveUsersMetadata, addUserMetadata, removeUserMetadata, addTypingUser, removeTypingUser, typingUsers } = useRoomStore()
   const { addAvatar, removeAvatar, updateAvatarPosition, clearAvatars } = useGameStore()
   
   const [scene, setScene] = useState<GameScene | null>(null)
@@ -99,16 +100,59 @@ export default function GameRoom() {
   const setupSocketListeners = () => {
     // Room joined
     socketService.on('room_joined', (data: any) => {
+      console.log('🔌 Room joined event received:', data)
+      console.log('Active users:', data.active_users)
+      console.log('Active users metadata:', data.active_users_metadata)
+      
       if (data.conversation_history && Array.isArray(data.conversation_history)) {
         setMessages(data.conversation_history)
       }
+      
+      // Build final active users list - ALWAYS include current user
+      let finalActiveUsers: string[] = []
+      
       if (data.active_users && Array.isArray(data.active_users)) {
-        setActiveUsers(data.active_users)
+        console.log('✅ Received active users from backend:', data.active_users)
+        finalActiveUsers = [...data.active_users]
+      } else {
+        console.warn('⚠️ Received empty or invalid active_users array')
+      }
+      
+      // CRITICAL: Ensure current user is in the list
+      if (user && !finalActiveUsers.includes(user.id)) {
+        console.log('✅ Current user NOT in backend list - adding:', user.id, user.username)
+        finalActiveUsers.push(user.id)
+      } else if (user) {
+        console.log('✅ Current user already in backend list:', user.id, user.username)
+      }
+      
+      console.log('📊 Final active users list:', finalActiveUsers)
+      setActiveUsers(finalActiveUsers)
+      
+      // Store full user metadata
+      if (data.active_users_metadata && Array.isArray(data.active_users_metadata)) {
+        setActiveUsersMetadata(data.active_users_metadata)
+        console.log('👥 Active users metadata stored:', data.active_users_metadata)
+      }
+      
+      // CRITICAL: Ensure current user's metadata is available
+      if (user) {
+        const currentUserMetadata = {
+          user_id: user.id,
+          username: user.username,
+          avatar_style: user.avatar_style,
+          avatar_color: user.avatar_color,
+          mood_icon: user.mood_icon
+        }
+        addUserMetadata(currentUserMetadata)
+        console.log('✅ Added current user metadata:', currentUserMetadata)
       }
     })
 
     // User joined
     socketService.on('user_joined', (data: any) => {
+      console.log('👋 User joined event received:', data)
+      
       if (scene && data.user_id !== user!.id) {
         scene.addAvatar(
           data.user_id,
@@ -119,15 +163,45 @@ export default function GameRoom() {
           300
         )
       }
-      setActiveUsers(prev => [...prev, data.user_id])
+      
+      // CRITICAL: Get CURRENT state from store, not captured closure value
+      const currentActiveUsers = useRoomStore.getState().activeUsers
+      console.log('📊 Current active users before adding:', currentActiveUsers)
+      
+      if (!currentActiveUsers.includes(data.user_id)) {
+        console.log('➕ Adding new user to active users:', data.user_id, data.username)
+        setActiveUsers([...currentActiveUsers, data.user_id])
+      } else {
+        console.log('✅ User already in active users:', data.user_id)
+      }
+      
+      // Store user metadata
+      addUserMetadata({
+        user_id: data.user_id,
+        username: data.username,
+        avatar_style: data.avatar_style || 'human',
+        avatar_color: data.avatar_color || 'blue',
+        mood_icon: data.mood_icon
+      })
     })
 
     // User left
     socketService.on('user_left', (data: any) => {
+      console.log('👋 User left event received:', data)
+      
       if (scene) {
         scene.removeAvatar(data.user_id)
       }
-      setActiveUsers(prev => prev.filter(id => id !== data.user_id))
+      
+      // CRITICAL: Get CURRENT state from store, not captured closure value
+      const currentActiveUsers = useRoomStore.getState().activeUsers
+      console.log('📊 Current active users before removing:', currentActiveUsers)
+      
+      const updatedUsers = currentActiveUsers.filter((id: string) => id !== data.user_id)
+      console.log('➖ Removing user from active users:', data.user_id)
+      console.log('📊 Updated active users after removing:', updatedUsers)
+      setActiveUsers(updatedUsers)
+      removeUserMetadata(data.user_id)
     })
 
     // New message - CRITICAL: This must trigger UI update
@@ -166,20 +240,12 @@ export default function GameRoom() {
 
     // Typing indicator
     socketService.on('user_typing', (data: any) => {
-      console.log('👀 Typing event received:', data)
-      console.log('Current user:', user!.username)
-      
       if (data.username !== user!.username) {
-        console.log('✅ Different user, updating typing state:', data.is_typing)
         if (data.is_typing) {
           addTypingUser(data.username)
-          console.log('Added typing user:', data.username)
         } else {
           removeTypingUser(data.username)
-          console.log('Removed typing user:', data.username)
         }
-      } else {
-        console.log('⚠️ Same user, ignoring typing event')
       }
     })
 
@@ -303,23 +369,42 @@ export default function GameRoom() {
 
       {/* Main Content */}
       <div className="h-[calc(100vh-4rem)] grid grid-cols-1 md:grid-cols-12 gap-4 p-4">
-        {/* Game Canvas */}
+        {/* Active Users Panel with 2D Avatars */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="md:col-span-6 h-full"
+          className="md:col-span-3 h-full"
         >
-          <div className="h-full bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-2xl">
-            <GameCanvas
-              roomId={roomId!}
-              userId={user.id}
-              username={user.username}
-              avatarStyle={user.avatar_style}
-              avatarColor={user.avatar_color}
-              onMove={handleMove}
-              onReady={handleSceneReady}
-            />
-          </div>
+          <ActiveUsersPanel
+            users={(() => {
+              console.log('🎨 Rendering ActiveUsersPanel')
+              console.log('   Active users array:', activeUsers)
+              console.log('   Metadata map size:', activeUsersMetadata.size)
+              console.log('   Current user:', user.id, user.username)
+              
+              const mappedUsers = activeUsers.map((userId: string) => {
+                // Get metadata from the map
+                const metadata = activeUsersMetadata.get(userId)
+                
+                const userObj = {
+                  userId,
+                  username: userId === user.id 
+                    ? user.username 
+                    : metadata?.username || messages.find((m: Message) => m.user_id === userId)?.username || 'User',
+                  avatarColor: userId === user.id
+                    ? user.avatar_color
+                    : metadata?.avatar_color || 'blue',
+                }
+                
+                console.log(`   User ${userId}: ${userObj.username} (${userObj.avatarColor})`)
+                return userObj
+              })
+              
+              console.log('   Total users to display:', mappedUsers.length)
+              return mappedUsers
+            })()}
+            currentUserId={user.id}
+          />
         </motion.div>
 
         {/* Chat Panel */}
@@ -327,7 +412,7 @@ export default function GameRoom() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="md:col-span-4 h-full"
+          className="md:col-span-9 h-full"
         >
           <ChatPanel
             messages={messages}
@@ -338,26 +423,6 @@ export default function GameRoom() {
           />
         </motion.div>
 
-        {/* User List */}
-        {showUserList && (
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className="md:col-span-2 h-full hidden md:block"
-          >
-            <UserList
-              users={activeUsers.map(userId => ({
-                userId,
-                username: userId === user.id ? user.username : 'User',
-                avatarStyle: user.avatar_style,
-                avatarColor: user.avatar_color,
-                isActive: true,
-              }))}
-              currentUserId={user.id}
-            />
-          </motion.div>
-        )}
       </div>
     </div>
   )

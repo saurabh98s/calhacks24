@@ -6,7 +6,7 @@ from uuid import UUID
 
 class RoomBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    room_type: str = Field(..., pattern="^(study_group|support_circle|casual_lounge|private)$")
+    room_type: str = Field(..., pattern="^(study_group|support_circle|casual_lounge|private|tutorial)$")
     ai_persona: str
     description: Optional[str] = None
     max_users: int = 10

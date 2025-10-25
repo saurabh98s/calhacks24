@@ -164,6 +164,10 @@ class ContextManager:
     @staticmethod
     async def add_user_to_room(room_id: str, user_id: str, username: str):
         """Add user to room state"""
+        # CRITICAL: ALWAYS add user to Redis set first
+        await redis_client.add_user_to_room(room_id, user_id)
+        
+        # Then update room state if it exists
         state = await redis_client.get_room_state(room_id)
         
         if not state:
@@ -176,7 +180,6 @@ class ContextManager:
             state["users"].append(user_info)
         
         await redis_client.set_room_state(room_id, state)
-        await redis_client.add_user_to_room(room_id, user_id)
     
     @staticmethod
     async def remove_user_from_room(room_id: str, user_id: str):

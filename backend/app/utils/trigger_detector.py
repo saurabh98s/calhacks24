@@ -16,19 +16,37 @@ class TriggerDetector:
         ai_persona: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Analyze message and states to determine if AI should respond
-        Returns trigger info or None
+        ENHANCED: Analyze message and states to determine if AI should respond
+        Now detects peer-to-peer conversations and knows when to stay quiet
         """
         message_lower = message.lower()
         ai_name = ai_persona.lower()
         
-        # 1. Direct mention of AI
-        if f"@{ai_name}" in message_lower or ai_name in message_lower:
+        # SPECIAL CASE: If only 1 user in room, AI should be very responsive!
+        active_users = room_state.get("users", [])
+        if len(active_users) == 1:
+            # Single user - respond to almost everything to keep them engaged
             return {
-                "type": "direct_mention",
+                "type": "single_user_engagement",
                 "priority": "high",
                 "target_user": user_state.get("user_id"),
-                "context": "User directly addressed the AI"
+                "context": "Only one user in room - provide engaging conversation"
+            }
+        
+        # 0. CRITICAL: Detect if user is talking to another user (peer-to-peer)
+        # If so, AI should NOT interrupt unless directly asked
+        if "@" in message and ai_name not in message_lower:
+            # User is mentioning another user, not the AI
+            # AI should stay quiet and let users talk
+            return None
+        
+        # 1. Direct mention of AI - HIGHEST PRIORITY!
+        if f"@{ai_name}" in message_lower or f"@atlas" in message_lower or "atlas" in message_lower:
+            return {
+                "type": "direct_mention",
+                "priority": "critical",  # Changed to critical for instant response
+                "target_user": user_state.get("user_id"),
+                "context": "User directly mentioned AI - respond immediately!"
             }
         
         # 2. User confusion detected
@@ -42,11 +60,27 @@ class TriggerDetector:
             }
         
         # 3. Question asked (questions are important!)
-        question_indicators = ["?", "what", "why", "how", "when", "where", "who", "can you"]
-        if any(indicator in message_lower for indicator in question_indicators):
+        # BUT: Be smart about peer-to-peer questions
+        question_indicators = ["?"]
+        if any(indicator in message for indicator in question_indicators):
+            # Check if question seems directed at the group vs AI
+            # If message is very short and has @mention, likely peer-to-peer
+            if "@" in message and len(message) < 50:
+                return None  # Let users converse
+            
             return {
                 "type": "question_asked",
-                "priority": "high",  # Changed from medium to high - questions should be answered!
+                "priority": "high",
+                "target_user": user_state.get("user_id"),
+                "context": "User asked a question and needs an answer"
+            }
+        
+        # 4. Detect "how/what/why" questions even without ?
+        question_words = ["how do", "what is", "why is", "can someone", "does anyone"]
+        if any(word in message_lower for word in question_words):
+            return {
+                "type": "question_asked",
+                "priority": "high",
                 "target_user": user_state.get("user_id"),
                 "context": "User asked a question and needs an answer"
             }

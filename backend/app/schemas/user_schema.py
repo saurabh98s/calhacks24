@@ -16,6 +16,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: Optional[str] = None
     is_guest: bool = False
+    room_id: Optional[str] = None  # Room user is joining
 
 
 class UserUpdate(BaseModel):

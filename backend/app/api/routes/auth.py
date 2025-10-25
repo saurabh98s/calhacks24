@@ -14,6 +14,29 @@ from app.config import settings
 router = APIRouter()
 
 
+@router.post("/validate-username")
+async def validate_username(
+    username: str,
+    room_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Validate if username is available in specific room"""
+    existing_user = await user_service.get_user_by_username_and_room(
+        db, username, room_id
+    )
+    
+    if existing_user:
+        return {
+            "available": False,
+            "message": f"Username '{username}' is already taken in this room"
+        }
+    
+    return {
+        "available": True,
+        "message": "Username is available"
+    }
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """Register a new user"""
@@ -62,13 +85,24 @@ async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.post("/guest", response_model=Token)
 async def guest_login(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Create guest user"""
+    """Create guest user with room-specific username validation"""
     
     # Ensure it's marked as guest
     user_data.is_guest = True
     user_data.password = None
     
-    # Create user
+    # Check if username exists in THIS specific room
+    if user_data.room_id:
+        existing_user = await user_service.get_user_by_username_and_room(
+            db, user_data.username, user_data.room_id
+        )
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Username '{user_data.username}' is already taken in this room. Please choose another."
+            )
+    
+    # Create user with room assignment
     user = await user_service.create_user(db, user_data)
     
     # Create access token

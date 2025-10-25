@@ -98,6 +98,14 @@ class RoomService:
         if room:
             room.active_users_count = count
             await db.commit()
+    
+    @staticmethod
+    async def delete_room(db: AsyncSession, room_id: UUID):
+        """Delete a room when all users have left"""
+        room = await RoomService.get_room_by_id(db, room_id)
+        if room:
+            await db.delete(room)
+            await db.commit()
 
 
 room_service = RoomService()
