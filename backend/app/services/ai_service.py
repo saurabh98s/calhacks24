@@ -2,6 +2,7 @@
 AI Service - Handles communication with Janitor AI API and Anthropic Claude as fallback
 """
 import httpx
+import asyncio
 from typing import Dict, Any, Optional
 from anthropic import AsyncAnthropic
 from app.config import settings
@@ -30,7 +31,7 @@ class AIService:
         messages: list[Dict[str, str]],
         max_tokens: int = 500,
         temperature: float = 0.8,
-        use_janitor: bool = True
+        use_janitor: bool = False  # Disabled by default - set to True if using Janitor AI
     ) -> Optional[Dict[str, Any]]:
         """
         Generate AI response using Janitor AI or Anthropic Claude
@@ -39,7 +40,7 @@ class AIService:
         then validate with Claude if needed
         """
         
-        # Try Janitor AI first
+        # Try Janitor AI first (only if enabled)
         if use_janitor:
             try:
                 response = await self._call_janitor_ai(messages, max_tokens, temperature)
@@ -47,13 +48,13 @@ class AIService:
                     logger.info("✅ Janitor AI response generated")
                     return response
             except Exception as e:
-                logger.error(f"❌ Janitor AI failed: {e}")
+                logger.warning(f"⚠️ Janitor AI not available, using Anthropic: {e}")
         
-        # Fallback to Anthropic Claude
+        # Use Anthropic Claude (primary AI service)
         try:
             response = await self._call_anthropic(messages, max_tokens, temperature)
             if response:
-                logger.info("✅ Anthropic Claude response generated (fallback)")
+                logger.info("✅ Anthropic Claude response generated")
                 return response
         except Exception as e:
             logger.error(f"❌ Anthropic Claude failed: {e}")
@@ -109,68 +110,142 @@ class AIService:
         temperature: float
     ) -> Optional[Dict[str, Any]]:
         """
-        Call Anthropic Claude API
-        Uses the latest Claude API (claude-3-5-sonnet-20241022)
+        Call Anthropic Claude API with retry logic
+        Retries up to 3 times with exponential backoff on failure
         """
         # Check if Anthropic client is initialized
         if not self.anthropic_client:
             logger.warning("Anthropic API not configured, using mock response")
+            print(f"⚠️ DEBUG [AI Service]: No Anthropic client - using mock")
             return await self._get_mock_response(messages)
         
-        try:
-            # Convert messages to Anthropic format
-            # Separate system messages from user/assistant messages
-            system_message = ""
-            conversation_messages = []
+        # Retry configuration
+        MAX_RETRIES = 3
+        INITIAL_DELAY = 1  # seconds
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                if attempt > 0:
+                    delay = INITIAL_DELAY * (2 ** (attempt - 1))  # Exponential backoff
+                    print(f"🔄 DEBUG: Retry attempt {attempt + 1}/{MAX_RETRIES} after {delay}s delay...")
+                    logger.info(f"Retrying Anthropic API call (attempt {attempt + 1}/{MAX_RETRIES})")
+                    await asyncio.sleep(delay)
+                
+                print(f"🤖 DEBUG [AI Service]: Calling Anthropic API")
+                print(f"   Input messages count: {len(messages)}")
+                print(f"   Max tokens: {max_tokens}")
+                print(f"   Temperature: {temperature}")
+                
+                # Convert messages to Anthropic format
+                # Separate system messages from user/assistant messages
+                system_message = ""
+                conversation_messages = []
+                
+                for i, msg in enumerate(messages):
+                    print(f"   Message {i}: role={msg['role']}, content_length={len(msg.get('content', ''))}")
+                    if msg["role"] == "system":
+                        # Combine all system messages
+                        system_message += msg["content"] + "\n\n"
+                    else:
+                        conversation_messages.append({
+                            "role": msg["role"],
+                            "content": msg["content"]
+                        })
+                
+                print(f"   System message length: {len(system_message)}")
+                print(f"   Conversation messages: {len(conversation_messages)}")
+                
+                # If no conversation messages, create a user message
+                if not conversation_messages:
+                    print(f"   ⚠️ No conversation messages - adding default")
+                    conversation_messages = [{"role": "user", "content": "Hello"}]
+                
+                # Ensure the conversation starts with a user message
+                if conversation_messages[0]["role"] != "user":
+                    print(f"   ⚠️ First message not user - inserting prompt")
+                    conversation_messages.insert(0, {"role": "user", "content": "Continue the conversation."})
+                
+                # Debug: Show first and last conversation messages
+                if conversation_messages:
+                    print(f"   First conv msg: {conversation_messages[0]['role']}: {conversation_messages[0]['content'][:100]}...")
+                    if len(conversation_messages) > 1:
+                        print(f"   Last conv msg: {conversation_messages[-1]['role']}: {conversation_messages[-1]['content'][:100]}...")
             
-            for msg in messages:
-                if msg["role"] == "system":
-                    # Combine all system messages
-                    system_message += msg["content"] + "\n\n"
-                else:
-                    conversation_messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
-            
-            # If no conversation messages, create a user message
-            if not conversation_messages:
-                conversation_messages = [{"role": "user", "content": "Hello"}]
-            
-            # Ensure the conversation starts with a user message
-            if conversation_messages[0]["role"] != "user":
-                conversation_messages.insert(0, {"role": "user", "content": "Continue the conversation."})
-            
-            # Call Anthropic API
-            response = await self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system_message.strip() if system_message else None,
-                messages=conversation_messages
-            )
-            
-            # Extract content
-            content = ""
-            if response.content:
-                # Handle both text and other content types
-                for block in response.content:
-                    if hasattr(block, 'text'):
-                        content += block.text
-            
-            return {
-                "content": content,
-                "model": response.model,
-                "usage": {
-                    "input_tokens": response.usage.input_tokens,
-                    "output_tokens": response.usage.output_tokens,
+                # Call Anthropic API
+                # Valid models: claude-3-5-sonnet-20240620, claude-3-opus-20240229
+                # Using Claude 3.5 Sonnet (best for conversational AI)
+                print(f"📞 DEBUG: Making API call to Claude (attempt {attempt + 1}/{MAX_RETRIES})...")
+                response = await self.anthropic_client.messages.create(
+                    model="claude-sonnet-4-5-20250929",  # ✅ Valid Claude 3.5 Sonnet
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    system=system_message.strip() if system_message else None,
+                    messages=conversation_messages
+                )
+                
+                print(f"✅ DEBUG: API call successful")
+                print(f"   Model: {response.model}")
+                print(f"   Stop reason: {response.stop_reason}")
+                print(f"   Content blocks: {len(response.content)}")
+                
+                # Extract content
+                content = ""
+                if response.content:
+                    # Handle both text and other content types
+                    for i, block in enumerate(response.content):
+                        if hasattr(block, 'text'):
+                            block_text = block.text
+                            content += block_text
+                            print(f"   Block {i}: {len(block_text)} chars - '{block_text[:100]}...'")
+                        else:
+                            print(f"   Block {i}: Non-text block: {type(block)}")
+                
+                print(f"   Total content length: {len(content)}")
+                print(f"   Content: '{content[:200]}...'")
+                
+                # Check for empty content
+                if not content or content.strip() == "":
+                    print(f"⚠️ DEBUG: Empty content returned from API on attempt {attempt + 1}")
+                    
+                    # If this is the last attempt, give up
+                    if attempt == MAX_RETRIES - 1:
+                        print(f"❌ DEBUG: All {MAX_RETRIES} attempts failed - using mock response")
+                        logger.error(f"Empty content from Anthropic API after {MAX_RETRIES} retries")
+                        return await self._get_mock_response(messages)
+                    
+                    # Otherwise, retry
+                    print(f"🔄 DEBUG: Retrying due to empty content...")
+                    continue
+                
+                # Success! Return the response
+                return {
+                    "content": content,
+                    "model": response.model,
+                    "usage": {
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                    }
                 }
-            }
+            
+            except Exception as e:
+                error_message = str(e)
+                print(f"❌ DEBUG: Anthropic API error on attempt {attempt + 1}/{MAX_RETRIES}: {error_message}")
+                logger.error(f"Anthropic API error (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                
+                # If this is the last attempt, give up
+                if attempt == MAX_RETRIES - 1:
+                    print(f"❌ DEBUG: All {MAX_RETRIES} attempts failed - using mock response")
+                    import traceback
+                    traceback.print_exc()
+                    return await self._get_mock_response(messages)
+                
+                # Otherwise, retry
+                print(f"🔄 DEBUG: Will retry after backoff delay...")
+                continue
         
-        except Exception as e:
-            logger.error(f"Anthropic API error: {e}")
-            # Return mock response on error
-            return await self._get_mock_response(messages)
+        # If we somehow exit the loop without returning, use mock response
+        logger.error(f"Exhausted all {MAX_RETRIES} retries without success")
+        return await self._get_mock_response(messages)
     
     async def _get_mock_response(
         self,

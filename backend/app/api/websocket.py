@@ -333,16 +333,24 @@ async def send_message(sid, data):
         logger.info(f"✅ Message broadcast complete for room {room_id}")
         
         # Detect triggers for AI response
+        print(f"🔍 DEBUG: Detecting triggers for message: '{message}'")
         triggers = await context_manager.detect_triggers(room_id, user_id, message)
+        print(f"📊 DEBUG: Detected {len(triggers)} triggers: {[t.get('type') for t in triggers]}")
+        
+        if not triggers:
+            print(f"⚠️ DEBUG: No triggers detected - AI will not respond")
         
         # Generate AI response if triggered
         for trigger in triggers:
+            print(f"⚡ DEBUG: Processing trigger: {trigger.get('type')} (priority: {trigger.get('priority')})")
             # If user directly mentioned AI, respond IMMEDIATELY (not async)
             if trigger.get("priority") == "critical" or trigger.get("type") == "direct_mention":
                 logger.info(f"🚨 CRITICAL TRIGGER: Responding immediately to direct AI mention")
+                print(f"🚨 DEBUG: CRITICAL trigger - responding immediately")
                 await generate_ai_response(room_id, trigger)
             else:
                 # Other triggers can be async
+                print(f"🔄 DEBUG: Non-critical trigger - creating async task")
                 asyncio.create_task(generate_ai_response(room_id, trigger))
         
     except Exception as e:
@@ -381,23 +389,62 @@ async def generate_ai_response(room_id: str, trigger: dict):
     """Generate AI response based on trigger - optimized for multi-user context"""
     try:
         logger.info(f"🤖 Generating AI response for room {room_id}, trigger: {trigger.get('type')}")
+        print(f"🤖 DEBUG: Starting AI response generation")
+        print(f"   Room: {room_id}")
+        print(f"   Trigger: {trigger}")
         
         # Build prompt with full multi-user context
-        prompt_data = await context_manager.build_ai_prompt(room_id, trigger)
+        try:
+            prompt_data = await context_manager.build_ai_prompt(room_id, trigger)
+            print(f"✅ DEBUG: Prompt data built successfully")
+            print(f"   Messages count: {len(prompt_data.get('messages', []))}")
+            print(f"   Max tokens: {prompt_data.get('max_tokens')}")
+            print(f"   Temperature: {prompt_data.get('temperature')}")
+        except Exception as e:
+            logger.error(f"❌ ERROR building prompt: {e}", exc_info=True)
+            print(f"❌ DEBUG: Error building prompt: {e}")
+            return
         
         if not prompt_data:
             logger.warning(f"No prompt data for room {room_id}")
+            print(f"⚠️ DEBUG: No prompt data returned")
+            return
+        
+        if not prompt_data.get("messages"):
+            logger.warning(f"No messages in prompt data for room {room_id}")
+            print(f"⚠️ DEBUG: prompt_data has no messages")
             return
         
         # Generate AI response (async, non-blocking)
+        print(f"📞 DEBUG: Calling AI service...")
         response = await ai_service.generate_response(
             messages=prompt_data.get("messages", []),
             max_tokens=prompt_data.get("max_tokens", 500),
             temperature=prompt_data.get("temperature", 0.8)
         )
+        print(f"✅ DEBUG: AI service returned response")
         
         if not response:
             logger.warning(f"No AI response generated for room {room_id}")
+            print(f"⚠️ DEBUG: AI service returned empty response")
+            return
+        
+        # Extract content
+        ai_content = response.get("content", "").strip()
+        
+        # CRITICAL: Strip any "Atlas:" or "Name:" prefix that AI might add
+        # AI sometimes includes the persona name in the response
+        import re
+        ai_content = re.sub(r'^(Atlas|atlas|ATLAS):\s*["\']?', '', ai_content, flags=re.IGNORECASE)
+        ai_content = re.sub(r'^["\']', '', ai_content)  # Remove leading quotes
+        ai_content = ai_content.strip()
+        
+        print(f"📝 DEBUG: AI content (cleaned): '{ai_content[:100]}...' (length: {len(ai_content)})")
+        
+        # CRITICAL: Don't send empty messages
+        if not ai_content or len(ai_content) == 0:
+            logger.warning(f"AI returned empty content for room {room_id}")
+            print(f"❌ DEBUG: AI content is empty - NOT sending to users")
             return
         
         # Use single AI persona - Atlas
@@ -409,8 +456,8 @@ async def generate_ai_response(room_id: str, trigger: dict):
             "room_id": room_id,
             "user_id": None,
             "username": ai_persona,
-            "message": response["content"],
-            "content": response["content"],
+            "message": ai_content,
+            "content": ai_content,
             "message_type": "ai",
             "ai_persona": ai_persona,
             "ai_trigger": trigger.get("type"),
@@ -457,47 +504,96 @@ async def monitor_room_silence(room_id: str):
                 for user_id in users:
                     await context_manager.update_silence_duration(user_id)
                 
-                # PRIORITY 1: Check for INDIVIDUAL users who need engagement
-                for user_id in users:
+                # PRIORITY 1: Check for GROUP BALANCE in multi-user rooms
+                if len(users) >= 2:
+                    # Multi-user room - check for quiet users
+                    active_users = []
+                    quiet_users = []
+                    new_users = []
+                    
+                    for user_id in users:
+                        user_context = await redis_client.get_user_context(user_id)
+                        if user_context:
+                            participation = user_context.get("participation", {})
+                            silence_duration = participation.get("silence_duration", 0)
+                            message_count = participation.get("message_count", 0)
+                            
+                            if message_count == 0:
+                                new_users.append((user_id, user_context, silence_duration))
+                            elif silence_duration > 90:  # Quiet for 90+ seconds
+                                quiet_users.append((user_id, user_context, silence_duration))
+                            else:
+                                active_users.append((user_id, user_context))
+                    
+                    logger.info(f"👥 Room balance: {len(active_users)} active, {len(quiet_users)} quiet, {len(new_users)} new")
+                    
+                    # SCENARIO 1: New user joined but hasn't spoken (priority!)
+                    if new_users:
+                        for user_id, user_context, silence_duration in sorted(new_users, key=lambda x: x[2], reverse=True):
+                            if silence_duration > 30:  # New user quiet for 30+ seconds
+                                logger.info(f"🎯 NEW USER: {user_context.get('name')} hasn't participated yet ({silence_duration}s), including them")
+                                
+                                # Get active conversation topic
+                                history = await redis_client.get_conversation_history(room_id, limit=5)
+                                recent_topic = ""
+                                if history:
+                                    recent_msg = history[0].get('message', '')
+                                    recent_topic = f"Recent topic: {recent_msg[:50]}"
+                                
+                                trigger = {
+                                    "type": "new_user_inclusion",
+                                    "priority": "high",
+                                    "target_user": user_id,
+                                    "user_id": user_id,
+                                    "context": f"🎯 CRITICAL: {user_context.get('name')} is NEW and hasn't spoken yet. {recent_topic}. Welcome them warmly and ask them a simple, friendly question to include them. Use @{user_context.get('name')} and make it easy for them to jump in!"
+                                }
+                                
+                                await generate_ai_response(room_id, trigger)
+                                await asyncio.sleep(60)
+                                break
+                    
+                    # SCENARIO 2: Existing user went quiet (someone is being left out)
+                    elif quiet_users and len(active_users) > 0:
+                        # Someone is quiet while others are talking
+                        for user_id, user_context, silence_duration in sorted(quiet_users, key=lambda x: x[2], reverse=True):
+                            if silence_duration >= INDIVIDUAL_SILENCE_THRESHOLD:
+                                logger.info(f"🎯 QUIET USER: {user_context.get('name')} went quiet while others are talking ({silence_duration}s)")
+                                
+                                trigger = {
+                                    "type": "balance_conversation",
+                                    "priority": "medium",
+                                    "target_user": user_id,
+                                    "user_id": user_id,
+                                    "context": f"🎯 GROUP BALANCE: {user_context.get('name')} was active but has been quiet for {int(silence_duration)}s while others are chatting. Bring them back into the conversation with @{user_context.get('name')} and ask about their thoughts on the current topic."
+                                }
+                                
+                                await generate_ai_response(room_id, trigger)
+                                await asyncio.sleep(60)
+                                break
+                
+                # PRIORITY 2: Single user alone (different handling)
+                elif len(users) == 1:
+                    user_id = users[0]
                     user_context = await redis_client.get_user_context(user_id)
                     if user_context:
                         participation = user_context.get("participation", {})
                         silence_duration = participation.get("silence_duration", 0)
-                        message_count = participation.get("message_count", 0)
                         
-                        # If specific user has been silent AND has participated before
-                        # OR if user hasn't participated at all (new user)
-                        if message_count == 0 and silence_duration > 60:
-                            # New user who hasn't spoken - gentle invitation
-                            logger.info(f"🎯 User {user_context.get('name')} hasn't participated yet ({silence_duration}s), inviting them")
+                        # For single user, be more patient but still engage if too long
+                        if silence_duration >= 60:  # 1 minute silence in 1-on-1
+                            logger.info(f"🎯 SINGLE USER: {user_context.get('name')} quiet for {silence_duration}s, re-engaging")
                             
                             trigger = {
-                                "type": "individual_engagement",
-                                "priority": "high",
-                                "target_user": user_id,
-                                "context": f"{user_context.get('name')} joined but hasn't participated yet. Gently invite them into the conversation with a direct question. Use @{user_context.get('name')} to tag them."
-                            }
-                            
-                            await generate_ai_response(room_id, trigger)
-                            # Wait before checking again
-                            await asyncio.sleep(60)
-                            break  # Only address one user at a time
-                            
-                        elif message_count > 0 and silence_duration >= INDIVIDUAL_SILENCE_THRESHOLD:
-                            # Existing participant who went quiet
-                            logger.info(f"🎯 User {user_context.get('name')} went quiet after participating ({silence_duration}s), re-engaging")
-                            
-                            trigger = {
-                                "type": "individual_engagement",
+                                "type": "single_user_engagement",
                                 "priority": "medium",
                                 "target_user": user_id,
-                                "context": f"{user_context.get('name')} was active but has been quiet for {int(silence_duration)} seconds. Reference their previous messages and ask a follow-up question to bring them back in. Use @{user_context.get('name')}."
+                                "user_id": user_id,
+                                "context": f"User is alone and quiet. Ask an engaging question or share something interesting to restart the conversation."
                             }
                             
                             await generate_ai_response(room_id, trigger)
-                            # Wait before checking again
                             await asyncio.sleep(60)
-                            break  # Only address one user at a time
+                            continue
                 
                 # PRIORITY 2: Check for GROUP silence (only if no individual issues)
                 history = await redis_client.get_conversation_history(room_id, limit=1)
