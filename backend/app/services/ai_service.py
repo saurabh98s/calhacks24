@@ -172,11 +172,10 @@ class AIService:
                         print(f"   Last conv msg: {conversation_messages[-1]['role']}: {conversation_messages[-1]['content'][:100]}...")
             
                 # Call Anthropic API
-                # Valid models: claude-3-5-sonnet-20240620, claude-3-opus-20240229
-                # Using Claude 3.5 Sonnet (best for conversational AI)
+                # Using model specified by user: claude-sonnet-4-5-20250929
                 print(f"📞 DEBUG: Making API call to Claude (attempt {attempt + 1}/{MAX_RETRIES})...")
                 response = await self.anthropic_client.messages.create(
-                    model="claude-sonnet-4-5-20250929",  # ✅ Valid Claude 3.5 Sonnet
+                    model="claude-sonnet-4-5-20250929",  # User-specified Anthropic model
                     max_tokens=max_tokens,
                     temperature=temperature,
                     system=system_message.strip() if system_message else None,

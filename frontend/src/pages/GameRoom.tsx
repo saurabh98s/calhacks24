@@ -17,6 +17,7 @@ import { socketService } from '../services/socketService'
 import { apiService } from '../services/apiService'
 import { GameScene } from '../game/GameScene'
 import { Position, Message } from '../types'
+import '../styles/retro-game.css'
 
 export default function GameRoom() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -38,6 +39,13 @@ export default function GameRoom() {
       navigate('/avatar')
       return
     }
+
+    // 🔄 CLEAR EVERYTHING ON MOUNT FOR FRESH START
+    console.log('🔄 Clearing messages and users for fresh start')
+    setMessages([])
+    setActiveUsers([])
+    setActiveUsersMetadata(new Map())
+    clearAvatars()
 
     initializeRoom()
 
@@ -104,9 +112,9 @@ export default function GameRoom() {
       console.log('Active users:', data.active_users)
       console.log('Active users metadata:', data.active_users_metadata)
       
-      if (data.conversation_history && Array.isArray(data.conversation_history)) {
-        setMessages(data.conversation_history)
-      }
+      // 🚫 DON'T LOAD OLD CONVERSATION HISTORY - FRESH START ONLY
+      console.log('🚫 Skipping conversation history for fresh start')
+      // Messages stay empty for fresh room experience
       
       // Build final active users list - ALWAYS include current user
       let finalActiveUsers: string[] = []
@@ -338,91 +346,167 @@ export default function GameRoom() {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 overflow-hidden">
+    <div className="h-screen overflow-hidden" style={{
+      background: 'linear-gradient(135deg, #95E1D3 0%, #4ECDC4 50%, #AA96DA 100%)',
+      position: 'relative'
+    }}>
+      {/* Animated pixel background */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='40' height='40' fill='rgba(255,255,255,0.05)'/%3E%3Crect x='15' y='15' width='10' height='10' fill='rgba(255,255,255,0.1)'/%3E%3C/svg%3E")`,
+        animation: 'float 20s linear infinite',
+        zIndex: 0
+      }} />
+
       {/* Header */}
-      <div className="h-16 bg-gray-900/80 backdrop-blur-sm border-b border-gray-700 flex items-center px-6">
-        <button
+      <div className="h-16 relative z-10" style={{
+        background: 'rgba(255, 255, 255, 0.95)',
+        borderBottom: '4px solid #000',
+        boxShadow: '0 4px 0 #000',
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 24px'
+      }}>
+        <motion.button
           onClick={handleBack}
-          className="flex items-center gap-2 text-white hover:text-purple-400 transition-colors"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="pixel-btn"
+          style={{
+            padding: '8px 16px',
+            fontSize: '10px',
+            background: '#FF6B6B'
+          }}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
-        </button>
+          ← BACK
+        </motion.button>
         
-        <div className="flex-1 text-center">
-          <h1 className="text-xl font-bold text-white">
-            {currentRoom?.name || 'Room'}
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <h1 className="pixel-title" style={{
+            fontSize: 'clamp(16px, 3vw, 20px)',
+            color: '#000',
+            textShadow: '3px 3px 0 #4ECDC4',
+            marginBottom: '4px'
+          }}>
+            🎮 {currentRoom?.name || 'GAME ROOM'} 🎮
           </h1>
-          <p className="text-sm text-gray-400">
+          <p style={{
+            fontSize: 'clamp(8px, 1.5vw, 10px)',
+            color: '#666',
+            fontFamily: 'Press Start 2P, cursive'
+          }}>
             {currentRoom?.description}
           </p>
         </div>
 
-        <button
+        <motion.button
           onClick={() => setShowUserList(!showUserList)}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors md:hidden"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="pixel-btn md:hidden"
+          style={{
+            padding: '8px 16px',
+            fontSize: '10px',
+            background: '#FFE66D',
+            color: '#000',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
         >
-          <UsersIcon className="w-5 h-5" />
+          <UsersIcon className="w-4 h-4" />
           <span>{activeUsers.length}</span>
-        </button>
+        </motion.button>
       </div>
 
       {/* Main Content */}
-      <div className="h-[calc(100vh-4rem)] grid grid-cols-1 md:grid-cols-12 gap-4 p-4">
-        {/* Active Users Panel with 2D Avatars */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="md:col-span-3 h-full"
-        >
-          <ActiveUsersPanel
-            users={(() => {
-              console.log('🎨 Rendering ActiveUsersPanel')
-              console.log('   Active users array:', activeUsers)
-              console.log('   Metadata map size:', activeUsersMetadata.size)
-              console.log('   Current user:', user.id, user.username)
-              
-              const mappedUsers = activeUsers.map((userId: string) => {
-                // Get metadata from the map
-                const metadata = activeUsersMetadata.get(userId)
-                
-                const userObj = {
-                  userId,
-                  username: userId === user.id 
-                    ? user.username 
-                    : metadata?.username || messages.find((m: Message) => m.user_id === userId)?.username || 'User',
-                  avatarColor: userId === user.id
-                    ? user.avatar_color
-                    : metadata?.avatar_color || 'blue',
-                }
-                
-                console.log(`   User ${userId}: ${userObj.username} (${userObj.avatarColor})`)
-                return userObj
-              })
-              
-              console.log('   Total users to display:', mappedUsers.length)
-              return mappedUsers
-            })()}
-            currentUserId={user.id}
-          />
-        </motion.div>
+      <div className="relative z-10" style={{
+        height: 'calc(100vh - 4rem)',
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gap: '16px',
+        padding: '16px'
+      }}>
+        <style>{`
+          @media (min-width: 768px) {
+            .game-room-grid {
+              grid-template-columns: minmax(250px, 1fr) minmax(0, 3fr) !important;
+            }
+          }
+        `}</style>
+        <div className="game-room-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr',
+          gap: '16px',
+          height: '100%',
+          overflow: 'hidden'
+        }}>
+          {/* Active Users Panel */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            style={{ height: '100%', overflow: 'hidden' }}
+          >
+            <div className="pixel-panel" style={{
+              background: 'rgba(255, 255, 255, 0.95)',
+              height: '100%',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <ActiveUsersPanel
+                users={(() => {
+                  console.log('🎨 Rendering ActiveUsersPanel')
+                  console.log('   Active users array:', activeUsers)
+                  console.log('   Metadata map size:', activeUsersMetadata.size)
+                  console.log('   Current user:', user.id, user.username)
+                  
+                  const mappedUsers = activeUsers.map((userId: string) => {
+                    // Get metadata from the map
+                    const metadata = activeUsersMetadata.get(userId)
+                    
+                    const userObj = {
+                      userId,
+                      username: userId === user.id 
+                        ? user.username 
+                        : metadata?.username || messages.find((m: Message) => m.user_id === userId)?.username || 'User',
+                      avatarColor: userId === user.id
+                        ? user.avatar_color
+                        : metadata?.avatar_color || 'blue',
+                    }
+                    
+                    console.log(`   User ${userId}: ${userObj.username} (${userObj.avatarColor})`)
+                    return userObj
+                  })
+                  
+                  console.log('   Total users to display:', mappedUsers.length)
+                  return mappedUsers
+                })()}
+                currentUserId={user.id}
+              />
+            </div>
+          </motion.div>
 
-        {/* Chat Panel */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="md:col-span-9 h-full"
-        >
-          <ChatPanel
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            onTyping={handleTyping}
-            currentUsername={user.username}
-            typingUsers={typingUsers}
-          />
-        </motion.div>
-
+          {/* Chat Panel */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          >
+            <ChatPanel
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              onTyping={handleTyping}
+              currentUsername={user.username}
+              typingUsers={typingUsers}
+            />
+          </motion.div>
+        </div>
       </div>
     </div>
   )

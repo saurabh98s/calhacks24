@@ -1,0 +1,475 @@
+/* 🎮 RETRO 8-BIT GAME UI STYLES 🎮 */
+
+/* Import Press Start 2P font for authentic 8-bit feel */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+/* Custom pixel art font alternative */
+@font-face {
+  font-family: 'PixelFont';
+  src: local('Press Start 2P');
+}
+
+:root {
+  /* 🎨 Bright Vibrant Game Colors */
+  --pixel-primary: #FF6B6B;
+  --pixel-secondary: #4ECDC4;
+  --pixel-accent: #FFE66D;
+  --pixel-success: #95E1D3;
+  --pixel-warning: #F38181;
+  --pixel-info: #AA96DA;
+  
+  /* Game UI Colors */
+  --pixel-bg-dark: #2C3E50;
+  --pixel-bg-light: #ECF0F1;
+  --pixel-border: #34495E;
+  --pixel-shadow: rgba(0, 0, 0, 0.3);
+  
+  /* Bright Gradient Backgrounds */
+  --gradient-sunset: linear-gradient(135deg, #FF6B6B 0%, #FFE66D 50%, #4ECDC4 100%);
+  --gradient-ocean: linear-gradient(135deg, #4ECDC4 0%, #556270 100%);
+  --gradient-fire: linear-gradient(135deg, #FF6B6B 0%, #FFE66D 100%);
+  --gradient-forest: linear-gradient(135deg, #95E1D3 0%, #4ECDC4 100%);
+  --gradient-magic: linear-gradient(135deg, #AA96DA 0%, #F38181 50%, #FFE66D 100%);
+  
+  /* Spacing */
+  --pixel-unit: 4px;
+  --pixel-border-width: 4px;
+}
+
+* {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+body {
+  font-family: 'Press Start 2P', cursive, monospace;
+  background: var(--gradient-magic);
+  background-attachment: fixed;
+  color: #FFF;
+  overflow-x: hidden;
+}
+
+/* 🎮 Pixel Art Button Styles */
+.pixel-btn {
+  font-family: 'Press Start 2P', cursive;
+  padding: 12px 24px;
+  font-size: 12px;
+  border: 4px solid #000;
+  background: var(--pixel-primary);
+  color: #FFF;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.1s;
+  box-shadow: 
+    4px 4px 0 #000,
+    8px 8px 0 rgba(0,0,0,0.3);
+}
+
+.pixel-btn:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 
+    2px 2px 0 #000,
+    4px 4px 0 rgba(0,0,0,0.3);
+}
+
+.pixel-btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 #000;
+}
+
+.pixel-btn-secondary {
+  background: var(--pixel-secondary);
+}
+
+.pixel-btn-accent {
+  background: var(--pixel-accent);
+  color: #000;
+}
+
+/* 🎮 Pixel Art Panel/Card */
+.pixel-panel {
+  background: #FFF;
+  border: 4px solid #000;
+  box-shadow: 
+    8px 8px 0 #000,
+    12px 12px 0 rgba(0,0,0,0.2);
+  padding: 24px;
+  margin: 16px;
+  position: relative;
+}
+
+.pixel-panel-dark {
+  background: var(--pixel-bg-dark);
+  color: #FFF;
+}
+
+.pixel-panel-gradient {
+  background: var(--gradient-sunset);
+  color: #FFF;
+}
+
+/* 🎮 Pixel Art Title */
+.pixel-title {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 32px;
+  text-align: center;
+  margin: 24px 0;
+  color: #FFF;
+  text-shadow: 
+    4px 4px 0 #000,
+    8px 8px 0 rgba(0,0,0,0.3);
+  letter-spacing: 4px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.pixel-subtitle {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 14px;
+  color: var(--pixel-accent);
+  text-align: center;
+  margin: 12px 0;
+  text-shadow: 2px 2px 0 #000;
+}
+
+/* 🎮 Pixel Art Input */
+.pixel-input {
+  font-family: 'Press Start 2P', cursive;
+  padding: 12px;
+  font-size: 12px;
+  border: 4px solid #000;
+  background: #FFF;
+  color: #000;
+  width: 100%;
+  box-sizing: border-box;
+  box-shadow: inset 4px 4px 0 rgba(0,0,0,0.1);
+}
+
+.pixel-input:focus {
+  outline: none;
+  border-color: var(--pixel-primary);
+  box-shadow: 
+    inset 4px 4px 0 rgba(255, 107, 107, 0.2),
+    0 0 0 4px var(--pixel-primary);
+}
+
+/* 🎮 Pixel Art Chat Bubble */
+.pixel-chat-bubble {
+  background: #FFF;
+  border: 4px solid #000;
+  padding: 12px 16px;
+  margin: 8px 0;
+  position: relative;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.pixel-chat-bubble::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 12px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 8px 12px 8px 0;
+  border-color: transparent #000 transparent transparent;
+}
+
+.pixel-chat-bubble::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 14px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 6px 10px 6px 0;
+  border-color: transparent #FFF transparent transparent;
+}
+
+.pixel-chat-bubble-ai {
+  background: var(--pixel-accent);
+  color: #000;
+}
+
+.pixel-chat-bubble-user {
+  background: var(--pixel-secondary);
+  color: #FFF;
+  margin-left: auto;
+}
+
+/* 🎮 Pixel Art Health Bar / Progress */
+.pixel-health-bar {
+  height: 24px;
+  background: #000;
+  border: 4px solid #000;
+  padding: 2px;
+  position: relative;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+}
+
+.pixel-health-fill {
+  height: 100%;
+  background: var(--gradient-fire);
+  transition: width 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.pixel-health-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 8px,
+    rgba(255,255,255,0.2) 8px,
+    rgba(255,255,255,0.2) 16px
+  );
+}
+
+/* 🎮 Pixel Art Badge */
+.pixel-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: var(--pixel-primary);
+  border: 3px solid #000;
+  color: #FFF;
+  font-size: 10px;
+  text-transform: uppercase;
+  box-shadow: 3px 3px 0 #000;
+  margin: 4px;
+}
+
+/* 🎮 Pixel Art Avatar Frame */
+.pixel-avatar {
+  width: 64px;
+  height: 64px;
+  border: 4px solid #000;
+  background: var(--gradient-ocean);
+  box-shadow: 
+    4px 4px 0 #000,
+    8px 8px 0 rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  image-rendering: pixelated;
+}
+
+.pixel-avatar-large {
+  width: 128px;
+  height: 128px;
+  font-size: 64px;
+}
+
+/* 🎮 Pixel Art Container with Game Border */
+.pixel-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+  position: relative;
+}
+
+.pixel-game-border {
+  border: 8px solid;
+  border-image: repeating-linear-gradient(
+    45deg,
+    #000,
+    #000 10px,
+    var(--pixel-primary) 10px,
+    var(--pixel-primary) 20px
+  ) 8;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* 🎮 Pixel Art Animations */
+@keyframes blink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0; }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10px); }
+  75% { transform: translateX(10px); }
+}
+
+.pixel-blink {
+  animation: blink 1s infinite;
+}
+
+.pixel-bounce {
+  animation: bounce 1s ease-in-out infinite;
+}
+
+.pixel-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* 🎮 Pixel Art Loading Spinner */
+.pixel-loading {
+  width: 64px;
+  height: 64px;
+  border: 8px solid #000;
+  background: var(--gradient-magic);
+  animation: spin 1s steps(8) infinite;
+  position: relative;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.pixel-loading::before {
+  content: '◢';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 32px;
+  color: #FFF;
+}
+
+/* 🎮 Pixel Art Toast/Notification */
+.pixel-toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  background: #FFF;
+  border: 4px solid #000;
+  padding: 16px 24px;
+  box-shadow: 
+    8px 8px 0 #000,
+    12px 12px 0 rgba(0,0,0,0.2);
+  z-index: 9999;
+  font-size: 12px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.pixel-toast-success {
+  background: var(--pixel-success);
+  color: #000;
+}
+
+.pixel-toast-error {
+  background: var(--pixel-warning);
+  color: #FFF;
+}
+
+/* 🎮 Pixel Art Grid Layout */
+.pixel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  padding: 24px;
+}
+
+/* 🎮 Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000;
+  border: 2px solid var(--pixel-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pixel-primary);
+  border: 2px solid #000;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pixel-secondary);
+}
+
+/* 🎮 Responsive Design */
+@media (max-width: 768px) {
+  .pixel-title {
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+  
+  .pixel-subtitle {
+    font-size: 10px;
+  }
+  
+  .pixel-btn {
+    font-size: 10px;
+    padding: 8px 16px;
+  }
+  
+  .pixel-input {
+    font-size: 10px;
+  }
+  
+  .pixel-chat-bubble {
+    font-size: 10px;
+  }
+}
+
+/* 🎮 Utility Classes */
+.pixel-text-shadow {
+  text-shadow: 4px 4px 0 #000;
+}
+
+.pixel-text-glow {
+  text-shadow: 
+    0 0 10px var(--pixel-accent),
+    0 0 20px var(--pixel-accent),
+    0 0 30px var(--pixel-accent);
+}
+
+.pixel-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pixel-mt-1 { margin-top: calc(var(--pixel-unit) * 1); }
+.pixel-mt-2 { margin-top: calc(var(--pixel-unit) * 2); }
+.pixel-mt-3 { margin-top: calc(var(--pixel-unit) * 3); }
+.pixel-mt-4 { margin-top: calc(var(--pixel-unit) * 4); }
+
+.pixel-mb-1 { margin-bottom: calc(var(--pixel-unit) * 1); }
+.pixel-mb-2 { margin-bottom: calc(var(--pixel-unit) * 2); }
+.pixel-mb-3 { margin-bottom: calc(var(--pixel-unit) * 3); }
+.pixel-mb-4 { margin-bottom: calc(var(--pixel-unit) * 4); }
+
+.pixel-p-1 { padding: calc(var(--pixel-unit) * 1); }
+.pixel-p-2 { padding: calc(var(--pixel-unit) * 2); }
+.pixel-p-3 { padding: calc(var(--pixel-unit) * 3); }
+.pixel-p-4 { padding: calc(var(--pixel-unit) * 4); }
+
