@@ -20,6 +20,7 @@ class User(Base):
     avatar_color = Column(String(50), default="blue")
     mood_icon = Column(String(50), default="😊")
     bio = Column(String(500), nullable=True)
+    persona = Column(String(1000), nullable=True)  # LinkedIn-generated persona
     
     # Stats
     engagement_score = Column(Integer, default=0)

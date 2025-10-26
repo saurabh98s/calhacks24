@@ -297,6 +297,13 @@ async def send_message(sid, data):
         # Update user context
         await context_manager.update_user_context(user_id, message, sentiment)
         
+        # Get user persona for message (fetch user first to get persona)
+        user_persona = None
+        async with AsyncSessionLocal() as db:
+            temp_user = await user_service.get_user_by_id(db, UUID(user_id))
+            if temp_user:
+                user_persona = getattr(temp_user, 'persona', None)
+        
         # Create message object
         message_obj = {
             "message_id": f"msg_{user_id}_{int(datetime.utcnow().timestamp() * 1000)}",
@@ -308,6 +315,7 @@ async def send_message(sid, data):
             "message_type": "user",
             "sentiment": sentiment,
             "timestamp": datetime.utcnow().isoformat(),
+            "persona": user_persona  # Include user persona from LinkedIn
         }
         
         # 🚀 MULTI-AGENT MODERATION SYSTEM
@@ -526,16 +534,25 @@ Format: YES|reason or NO"""
                 # Build context from recent messages
                 history = await redis_client.get_conversation_history(room_id, limit=10)
                 
-                # Build conversation context string
+                # Build conversation context string with personas
                 conversation_context = []
                 for hist_msg in reversed(history[-8:]):  # Last 8 messages for context
                     role = "You (AI)" if hist_msg.get("message_type") == "ai" else hist_msg.get("username", "User")
                     content = hist_msg.get("message", "")
+                    persona = hist_msg.get("persona", "")
+                    
                     if content:
-                        conversation_context.append(f"{role}: {content}")
+                        # Include persona if available
+                        if persona and hist_msg.get("message_type") == "user":
+                            conversation_context.append(f"{role} [{persona}]: {content}")
+                        else:
+                            conversation_context.append(f"{role}: {content}")
                 
-                # Add current message
-                conversation_context.append(f"{username}: {message}")
+                # Add current message with persona
+                if user_persona:
+                    conversation_context.append(f"{username} [{user_persona}]: {message}")
+                else:
+                    conversation_context.append(f"{username}: {message}")
                 conversation_text = "\n".join(conversation_context)
                 
                 # Get room-specific system prompt with detailed context

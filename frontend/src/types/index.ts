@@ -7,6 +7,7 @@ export interface User {
   avatar_color: string
   mood_icon: string
   bio?: string
+  persona?: string
   engagement_score: number
   total_messages: number
   rooms_joined: number
@@ -25,6 +26,8 @@ export interface UserCreate {
   mood_icon?: string
   bio?: string
   is_guest?: boolean
+  linkedin_url?: string
+  persona?: string
 }
 
 // Room types

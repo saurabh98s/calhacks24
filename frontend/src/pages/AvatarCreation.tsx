@@ -15,6 +15,10 @@ export default function AvatarCreation() {
   const [avatarColor, setAvatarColor] = useState<AvatarColor>('blue')
   const [moodIcon, setMoodIcon] = useState<MoodIcon>('😊')
   const [bio, setBio] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [profileData, setProfileData] = useState<any>(null)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [scrapingLinkedIn, setScrapingLinkedIn] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -40,9 +44,47 @@ export default function AvatarCreation() {
     return colorMap[color]
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
+  const handleScrapeLinkedIn = async () => {
+    if (!linkedinUrl.trim()) {
+      setError('Please enter a LinkedIn URL')
+      return
+    }
+
+    setScrapingLinkedIn(true)
+    setError('')
+
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/scrape-linkedin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linkedin_url: linkedinUrl.trim() })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Failed to scrape LinkedIn profile')
+      }
+
+      const data = await response.json()
+      setProfileData(data)
+      setShowConfirmDialog(true)
+    } catch (err: any) {
+      setError(err.message || 'Failed to scrape LinkedIn profile. Please check the URL and try again.')
+    } finally {
+      setScrapingLinkedIn(false)
+    }
+  }
+
+  const handleConfirmProfile = async () => {
+    setShowConfirmDialog(false)
+    await submitWithPersona()
+  }
+
+  const handleSkipLinkedIn = async () => {
+    await submitWithPersona()
+  }
+
+  const submitWithPersona = async () => {
     if (!username.trim()) {
       setError('Please enter a username')
       return
@@ -59,6 +101,7 @@ export default function AvatarCreation() {
         mood_icon: moodIcon,
         bio: bio.trim() || undefined,
         is_guest: true,
+        linkedin_url: linkedinUrl.trim() || undefined,
       })
 
       // Save token and get user info
@@ -74,6 +117,17 @@ export default function AvatarCreation() {
       setError(err.response?.data?.detail || 'Failed to create account. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // If LinkedIn URL provided but not scraped yet, scrape first
+    if (linkedinUrl.trim() && !profileData) {
+      await handleScrapeLinkedIn()
+    } else {
+      await submitWithPersona()
     }
   }
 
@@ -349,6 +403,54 @@ export default function AvatarCreation() {
               />
             </div>
 
+            {/* LinkedIn URL */}
+            <div>
+              <div className="pixel-subtitle" style={{
+                fontSize: 'clamp(10px, 2vw, 12px)',
+                marginBottom: '12px',
+                color: '#000',
+                textAlign: 'left'
+              }}>
+                🔗 LINKEDIN PROFILE (OPTIONAL)
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <input
+                  type="url"
+                  value={linkedinUrl}
+                  onChange={(e) => setLinkedinUrl(e.target.value)}
+                  placeholder="https://linkedin.com/in/username"
+                  className="pixel-input"
+                  style={{ fontSize: 'clamp(10px, 2vw, 12px)', flex: 1 }}
+                />
+                {linkedinUrl.trim() && !profileData && (
+                  <motion.button
+                    type="button"
+                    onClick={handleScrapeLinkedIn}
+                    disabled={scrapingLinkedIn}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="pixel-button"
+                    style={{
+                      padding: '12px 16px',
+                      background: scrapingLinkedIn ? '#95E1D3' : '#4ECDC4',
+                      fontSize: 'clamp(8px, 1.5vw, 10px)',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {scrapingLinkedIn ? '⏳ SCRAPING...' : '🔍 PREVIEW'}
+                  </motion.button>
+                )}
+              </div>
+              <div style={{
+                fontSize: 'clamp(8px, 1.5vw, 10px)',
+                color: '#666',
+                marginTop: '8px',
+                fontFamily: 'Press Start 2P, cursive'
+              }}>
+                {profileData ? '✅ PROFILE LOADED' : 'ADD YOUR LINKEDIN TO PERSONALIZE YOUR AI EXPERIENCE'}
+              </div>
+            </div>
+
             {error && (
               <motion.div
                 initial={{ scale: 0.8, opacity: 0 }}
@@ -403,6 +505,122 @@ export default function AvatarCreation() {
           </motion.div>
         </motion.div>
       </div>
+
+      {/* LinkedIn Confirmation Dialog */}
+      {showConfirmDialog && profileData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="pixel-panel pixel-game-border"
+            style={{
+              background: '#FFF',
+              maxWidth: '600px',
+              width: '100%',
+              maxHeight: '80vh',
+              overflow: 'auto'
+            }}
+          >
+            <h2 className="pixel-title" style={{
+              fontSize: 'clamp(14px, 3vw, 20px)',
+              marginBottom: '24px',
+              color: '#000'
+            }}>
+              ✅ CONFIRM YOUR PROFILE
+            </h2>
+
+            <div style={{
+              background: 'black',
+              padding: '16px',
+              borderRadius: '8px',
+              marginBottom: '24px',
+              fontFamily: 'Press Start 2P, cursive',
+              fontSize: 'clamp(8px, 1.5vw, 10px)',
+              lineHeight: '1.8'
+            }}>
+              {profileData.full_name && (
+                <div style={{ marginBottom: '12px' }}>
+                  <strong>👤 NAME:</strong> {profileData.full_name}
+                </div>
+              )}
+              {profileData.headline && (
+                <div style={{ marginBottom: '12px' }}>
+                  <strong>💼 HEADLINE:</strong> {profileData.headline}
+                </div>
+              )}
+              {profileData.location && (
+                <div style={{ marginBottom: '12px' }}>
+                  <strong>📍 LOCATION:</strong> {profileData.location}
+                </div>
+              )}
+              {profileData.company && (
+                <div style={{ marginBottom: '12px' }}>
+                  <strong>🏢 COMPANY:</strong> {profileData.company}
+                </div>
+              )}
+              {profileData.persona && (
+                <div style={{ marginTop: '16px', padding: '12px', background: 'black', borderRadius: '4px' }}>
+                  <strong>🎯 AI PERSONA:</strong><br />
+                  {profileData.persona}
+                </div>
+              )}
+            </div>
+
+            <div style={{
+              fontSize: 'clamp(8px, 1.5vw, 10px)',
+              color: '#666',
+              marginBottom: '24px',
+              fontFamily: 'Press Start 2P, cursive',
+              lineHeight: '1.6'
+            }}>
+              ℹ️ THIS INFORMATION WILL BE USED TO PERSONALIZE YOUR AI INTERACTIONS. IS THIS CORRECT?
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <motion.button
+                onClick={() => setShowConfirmDialog(false)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="pixel-button"
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  background: '#FF6B6B',
+                  fontSize: 'clamp(10px, 2vw, 12px)'
+                }}
+              >
+                ❌ EDIT
+              </motion.button>
+              <motion.button
+                onClick={handleConfirmProfile}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="pixel-button"
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  background: '#4ECDC4',
+                  fontSize: 'clamp(10px, 2vw, 12px)'
+                }}
+              >
+                ✅ CONFIRM
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

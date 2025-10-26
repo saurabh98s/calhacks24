@@ -11,12 +11,14 @@ class UserBase(BaseModel):
     avatar_color: str = "blue"
     mood_icon: str = "😊"
     bio: Optional[str] = None
+    persona: Optional[str] = None  # LinkedIn-generated persona
 
 
 class UserCreate(UserBase):
     password: Optional[str] = None
     is_guest: bool = False
     room_id: Optional[str] = None  # Room user is joining
+    linkedin_url: Optional[str] = None  # LinkedIn URL for persona generation
 
 
 class UserUpdate(BaseModel):

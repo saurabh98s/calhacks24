@@ -434,19 +434,34 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createDoorTextures() {
-    const doorTypes = ['study', 'support', 'casual', 'private']
-    const doorColors = [0x6366f1, 0x10b981, 0xf59e0b, 0x8b5cf6]
+    // Updated door types: D&D, AA, Therapy, Private
+    const doorConfigs = [
+      { type: 'dnd', color: 0x8b4513, icon: '🎲' },           // Brown for D&D
+      { type: 'aa', color: 0x10b981, icon: '💚' },            // Green for AA
+      { type: 'therapy', color: 0x6366f1, icon: '🧠' },       // Blue for Therapy
+      { type: 'private', color: 0x8b5cf6, icon: '🔒' }        // Purple for Private
+    ]
 
-    doorTypes.forEach((type, index) => {
+    doorConfigs.forEach(({ type, color, icon }) => {
       const graphics = this.make.graphics({ x: 0, y: 0, add: false })
-      graphics.fillStyle(doorColors[index], 1)
+      
+      // Door body
+      graphics.fillStyle(color, 1)
       graphics.fillRoundedRect(0, 0, 60, 80, 8)
+      
+      // Door border
       graphics.lineStyle(3, 0x000000, 1)
       graphics.strokeRoundedRect(0, 0, 60, 80, 8)
       
       // Door knob
       graphics.fillStyle(0xffd700, 1)
       graphics.fillCircle(45, 40, 4)
+      graphics.lineStyle(1, 0x000000, 1)
+      graphics.strokeCircle(45, 40, 4)
+      
+      // Door panel accent
+      graphics.lineStyle(2, 0x000000, 0.3)
+      graphics.strokeRoundedRect(8, 10, 44, 60, 4)
       
       graphics.generateTexture(`door_${type}`, 60, 80)
       graphics.destroy()
