@@ -24,8 +24,12 @@ export const createGameConfig = (parent: string, scene: typeof Phaser.Scene): Ph
   },
   scene,
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.NONE,  // Changed from FIT to NONE to prevent auto-scaling
     autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  render: {
+    antialias: false,
+    pixelArt: true,
   },
 })
 

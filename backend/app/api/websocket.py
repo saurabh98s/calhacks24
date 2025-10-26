@@ -13,6 +13,13 @@ from app.services.context_manager import context_manager
 from app.services.ai_service import ai_service
 from app.services.user_service import user_service
 from app.services.room_service import room_service
+# Import multiagent service with fallback
+try:
+    from app.services.multiagent_service import get_multiagent_service
+except ImportError:
+    # Create a fallback function if multiagent service is not available
+    def get_multiagent_service():
+        return None
 from app.core.database import AsyncSessionLocal
 from app.utils.sentiment_analyzer import analyze_sentiment
 from app.services.trigger_ai_service import trigger_ai_service
@@ -309,67 +316,153 @@ async def send_message(sid, data):
             "timestamp": datetime.utcnow().isoformat(),
         }
         
-        # Add to conversation history FIRST
+        # 🚀 MULTI-AGENT MODERATION SYSTEM
+        logger.info(f"🎯 Processing message through multi-agent system for room {room_id}")
+
+        # Get room details for multi-agent processing
+        async with AsyncSessionLocal() as db:
+            user_db = await user_service.get_user_by_id(db, UUID(user_id))
+            room_db = await room_service.get_room_by_room_id(db, room_id)
+
+            if not user_db or not room_db:
+                logger.error(f"❌ User or room not found for multi-agent processing")
+                await sio.emit("error", {"message": "Processing error"}, to=sid)
+                return
+
+        # Get user context for multi-agent system
+        user_context_data = await redis_client.get_user_context(user_id)
+
+        # Process with multi-agent system (includes moderation, crisis detection, AI response)
+        multiagent = get_multiagent_service()
+        if multiagent is None:
+            # Fallback to basic processing if multi-agent system is not available
+            logger.warning("⚠️ Multi-agent service not available - using fallback processing")
+            result = {
+                "action": "allow",
+                "should_intervene": False,
+                "ai_response": "",
+                "metadata": {"fallback": True, "reason": "Multi-agent system unavailable"}
+            }
+        else:
+            result = await multiagent.process_message(
+                message_id=message_obj['message_id'],
+                user_id=user_id,
+                room_id=room_id,
+                message_content=message,
+                room_type=room_db.room_type,
+                user_context=user_context_data
+            )
+
+        # Extract results from multi-agent system
+        action = result["action"]
+        should_intervene = result["should_intervene"]
+        ai_response = result["ai_response"]
+        metadata = result["metadata"]
+
+        logger.info(f"🎛️ Multi-agent decision: action={action}, intervene={should_intervene}")
+
+        # Handle moderation actions based on priority system
+        if action == "ban":
+            logger.critical(f"🚫 BAN ACTION - User {user_id} banned for severe violation")
+            await sio.emit("user_banned", {
+                "user_id": user_id,
+                "reason": metadata.get("toxicity", {}).get("explanation", "Severe policy violation"),
+                "severity": "critical"
+            }, room=room_id)
+            return
+
+        elif action == "mute":
+            logger.warning(f"🔇 MUTE ACTION - User {user_id} muted")
+            await sio.emit("user_muted", {
+                "user_id": user_id,
+                "duration": metadata.get("mute_duration", 300),
+                "reason": metadata.get("toxicity", {}).get("explanation", "Policy violation")
+            }, room=room_id)
+            # Don't broadcast the message if muted
+            return
+
+        elif action == "warn":
+            logger.info(f"⚠️ WARNING - User {user_id} warned")
+            await sio.emit("moderation_warning", {
+                "message": metadata.get("warning_message", "Please keep messages respectful"),
+                "severity": metadata.get("severity", "medium")
+            }, room=sid)
+
+        elif action == "alert":
+            logger.critical(f"🚨 CRISIS ALERT - User {user_id} in room {room_id}")
+            # Log for admin review
+            logger.critical(f"CRISIS DETAILS: {metadata}")
+            # Send crisis resources to user
+            await sio.emit("crisis_resources", {
+                "message": "If you're in crisis, please reach out for help:",
+                "resources": [
+                    "988 Suicide & Crisis Lifeline (call or text)",
+                    "Crisis Text Line: Text HOME to 741741",
+                    "Emergency Services: 911"
+                ]
+            }, room=sid)
+
+        # Add to conversation history (only if not banned/muted)
         await redis_client.add_message_to_history(room_id, message_obj)
-        
+
         # Increment message counts
         async with AsyncSessionLocal() as db:
-            user = await user_service.get_user_by_id(db, UUID(user_id))
-            room = await room_service.get_room_by_room_id(db, room_id)
-            
-            if user:
+            if user_db:
                 await user_service.increment_message_count(db, UUID(user_id))
-            
-            if room:
-                await room_service.increment_message_count(db, room.id)
-        
-        # BROADCAST to ALL users in room
-        logger.info(f"📤 Broadcasting message {message_obj['message_id']} to room {room_id}")
-        
-        # Verify room membership (debugging)
-        room_sockets = sio.manager.rooms.get('/', {}).get(room_id, set())
-        logger.info(f"🔍 Room '{room_id}' has {len(room_sockets)} sockets: {room_sockets}")
-        
-        # Emit to room
-        await sio.emit("new_message", message_obj, room=room_id)
-        
-        logger.info(f"✅ Message broadcast complete for room {room_id}")
-        
-        # ====== NEW TWO-TIER AI SYSTEM ======
-        
-        # 1. Update enhanced memory for this user
-        print(f"💾 DEBUG: Updating enhanced memory for {username}...")
+
+            if room_db:
+                await room_service.increment_message_count(db, room_db.id)
+
+        # Update enhanced memory
         await enhanced_memory_manager.update_user_memory(user_id, username, message, room_id)
-        
-        # 2. Get full room context
-        print(f"📊 DEBUG: Getting room conversation context...")
-        room_context = await enhanced_memory_manager.get_room_conversation_context(room_id)
-        
-        # 3. Use Trigger AI (Janitor AI) to decide if host should respond
-        print(f"🎯 DEBUG: Calling Trigger AI to analyze conversation...")
-        user_contexts = room_context.get('user_memories', [])
-        trigger_decision = await trigger_ai_service.should_ai_respond(
-            room_context,
-            user_contexts,
-            message_obj
-        )
-        
-        if not trigger_decision:
-            print(f"⚠️ DEBUG: Trigger AI says: Stay quiet")
-            logger.info(f"Trigger AI decided no response needed")
-        else:
-            print(f"✅ DEBUG: Trigger AI says: Respond! Type: {trigger_decision.get('type')}, Priority: {trigger_decision.get('priority')}")
-            logger.info(f"Trigger AI activated: {trigger_decision.get('reason')}")
-            
-            # 4. Generate host response using Anthropic
-            if trigger_decision.get("priority") == "high":
-                # High priority - respond immediately
-                print(f"🚨 DEBUG: HIGH PRIORITY - responding immediately")
-                await generate_host_response(room_id, room_context, trigger_decision)
-            else:
-                # Normal priority - async
-                print(f"🔄 DEBUG: Normal priority - async response")
-                asyncio.create_task(generate_host_response(room_id, room_context, trigger_decision))
+
+        # BROADCAST user message with emotion indicators
+        emotion_data = metadata.get("emotion", {})
+        toxicity_data = metadata.get("toxicity", {})
+
+        broadcast_message = {
+            **message_obj,
+            "emotion": emotion_data.get("emotion"),
+            "emotion_score": emotion_data.get("score"),
+            "toxicity_score": toxicity_data.get("score")
+        }
+
+        await sio.emit("new_message", broadcast_message, room=room_id)
+        logger.info(f"✅ User message broadcast complete for room {room_id}")
+
+        # Generate AI response if needed
+        if should_intervene and ai_response:
+            logger.info(f"🤖 AI intervention required - generating response")
+
+            # Create AI message
+            ai_message = {
+                "message_id": f"ai_msg_{int(datetime.utcnow().timestamp() * 1000)}",
+                "room_id": room_id,
+                "user_id": None,
+                "username": room_db.ai_persona,  # Use room's AI persona
+                "message": ai_response,
+                "content": ai_response,
+                "message_type": "ai",
+                "ai_persona": room_db.ai_persona,
+                "ai_trigger": action,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": metadata  # Include full multi-agent metadata
+            }
+
+            # Add AI message to history
+            await redis_client.add_message_to_history(room_id, ai_message)
+
+            # Broadcast AI response
+            await sio.emit("new_message", ai_message, room=room_id)
+            logger.info(f"✅ AI response broadcast complete for room {room_id}")
+
+            # Update AI memory
+            await enhanced_memory_manager.update_user_memory(
+                "atlas_ai",
+                room_db.ai_persona,
+                ai_response,
+                room_id
+            )
         
     except Exception as e:
         logger.error(f"❌ ERROR IN SEND_MESSAGE: {e}", exc_info=True)
@@ -412,54 +505,46 @@ async def generate_host_response(room_id: str, room_context: dict, trigger_decis
     """
     try:
         logger.info(f"🎤 Generating host response for room {room_id}")
-        print(f"🎤 DEBUG: Starting host response generation...")
-        print(f"   Trigger type: {trigger_decision.get('type')}")
-        print(f"   Trigger reason: {trigger_decision.get('reason')}")
-        
+
         # 1. Build host prompt with full context
-        print(f"📝 DEBUG: Building host prompt...")
         messages = host_prompt_builder.build_host_prompt(room_context, trigger_decision)
-        print(f"   Built prompt with {len(messages)} message blocks")
-        
+
         # 2. Determine response parameters
         params = host_prompt_builder.determine_response_params(trigger_decision)
         max_tokens = params['max_tokens']
         temperature = params['temperature']
-        
-        print(f"   Response params: max_tokens={max_tokens}, temperature={temperature}")
-        
-        # 3. Generate response using Anthropic (with retry logic)
-        print(f"📞 DEBUG: Calling Anthropic for host response...")
+
+        # 3. Generate response using AI
         response = await ai_service.generate_response(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            use_janitor=False  # We already used Janitor for triggers
         )
-        
+
         if not response:
             logger.warning(f"No host response generated for room {room_id}")
-            print(f"⚠️ DEBUG: No response from Anthropic")
             return
         
         # 4. Extract and clean content
         ai_content = response.get("content", "").strip()
-        
+
         # CRITICAL: Strip any "Atlas:" or persona prefix
         import re
         ai_content = re.sub(r'^(Atlas|atlas|ATLAS):\s*["\']?', '', ai_content, flags=re.IGNORECASE)
         ai_content = re.sub(r'^["\']', '', ai_content)  # Remove leading quotes
         ai_content = re.sub(r'["\']$', '', ai_content)  # Remove trailing quotes
         ai_content = ai_content.strip()
-        
-        print(f"📝 DEBUG: Host response (cleaned): '{ai_content[:100]}...' (length: {len(ai_content)})")
-        
+
+        # CRITICAL: Filter out any SQL queries or system logs that AI might have generated
+        if _is_system_message(ai_content):
+            logger.warning(f"Host AI generated system message content for room {room_id}")
+            return
+
         # CRITICAL: Don't send empty messages
         if not ai_content or len(ai_content) == 0:
             logger.warning(f"Host returned empty content for room {room_id}")
-            print(f"❌ DEBUG: Empty host response - NOT sending")
             return
-        
+
         # 5. Create AI message
         ai_message = {
             "message_id": f"host_msg_{int(datetime.utcnow().timestamp() * 1000)}",
@@ -473,10 +558,10 @@ async def generate_host_response(room_id: str, room_context: dict, trigger_decis
             "ai_trigger": trigger_decision.get("type"),
             "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
         # 6. Add to conversation history
         await redis_client.add_message_to_history(room_id, ai_message)
-        
+
         # 7. Update enhanced memory (AI's own memory)
         await enhanced_memory_manager.update_user_memory(
             "atlas_ai",
@@ -484,84 +569,107 @@ async def generate_host_response(room_id: str, room_context: dict, trigger_decis
             ai_content,
             room_id
         )
-        
+
         # 8. Broadcast to ALL users in room
         logger.info(f"🎤 Broadcasting host message to room {room_id}")
         await sio.emit("new_message", ai_message, room=room_id)
-        
+
         logger.info(f"✅ Host response sent to room {room_id}")
-        print(f"✅ DEBUG: Host response broadcast complete")
-        
+
     except Exception as e:
         logger.error(f"❌ Error generating host response: {e}", exc_info=True)
-        print(f"❌ DEBUG: Unhandled error in generate_host_response: {e}")
+
+
+def _is_system_message(content: str) -> bool:
+    """
+    Check if a message contains SQL queries, system logs, or debug information
+    Prevents SQL logs and system messages from being stored in conversation history
+    """
+    if not content or not content.strip():
+        return True
+
+    content_str = str(content).upper()
+
+    # SQL query patterns
+    sql_patterns = [
+        'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'FROM ', 'WHERE ',
+        'sqlalchemy.engine', 'Engine.', 'BEGIN (implicit)', 'COMMIT',
+        'UPDATE users SET', 'UPDATE rooms SET', 'SELECT users.',
+        'SELECT rooms.', 'WHERE users.id =', 'WHERE rooms.id =',
+        '::UUID', '::VARCHAR', '::INTEGER'
+    ]
+
+    # Debug/log patterns
+    debug_patterns = [
+        'DEBUG', 'INFO', 'WARNING', 'ERROR', 'sqlalchemy.',
+        'Engine[', 'cached since', 'emitting event',
+        '🔍', '📊', '✅', '❌', '⚠️', '🎯', '🤖', '📝',
+        'PRINT(', 'LOGGER.', 'LOG.'
+    ]
+
+    # Check if this looks like a SQL query or system log
+    is_sql_or_debug = any(
+        pattern.upper() in content_str
+        for pattern in sql_patterns + debug_patterns
+    )
+
+    return is_sql_or_debug
 
 
 async def generate_ai_response(room_id: str, trigger: dict):
     """Generate AI response based on trigger - optimized for multi-user context"""
     try:
         logger.info(f"🤖 Generating AI response for room {room_id}, trigger: {trigger.get('type')}")
-        print(f"🤖 DEBUG: Starting AI response generation")
-        print(f"   Room: {room_id}")
-        print(f"   Trigger: {trigger}")
-        
+
         # Build prompt with full multi-user context
         try:
             prompt_data = await context_manager.build_ai_prompt(room_id, trigger)
-            print(f"✅ DEBUG: Prompt data built successfully")
-            print(f"   Messages count: {len(prompt_data.get('messages', []))}")
-            print(f"   Max tokens: {prompt_data.get('max_tokens')}")
-            print(f"   Temperature: {prompt_data.get('temperature')}")
         except Exception as e:
             logger.error(f"❌ ERROR building prompt: {e}", exc_info=True)
-            print(f"❌ DEBUG: Error building prompt: {e}")
             return
-        
+
         if not prompt_data:
             logger.warning(f"No prompt data for room {room_id}")
-            print(f"⚠️ DEBUG: No prompt data returned")
             return
-        
+
         if not prompt_data.get("messages"):
             logger.warning(f"No messages in prompt data for room {room_id}")
-            print(f"⚠️ DEBUG: prompt_data has no messages")
             return
-        
-        # Generate AI response (async, non-blocking)
-        print(f"📞 DEBUG: Calling AI service...")
+
+        # Generate AI response
         response = await ai_service.generate_response(
             messages=prompt_data.get("messages", []),
             max_tokens=prompt_data.get("max_tokens", 500),
             temperature=prompt_data.get("temperature", 0.8)
         )
-        print(f"✅ DEBUG: AI service returned response")
-        
+
         if not response:
             logger.warning(f"No AI response generated for room {room_id}")
-            print(f"⚠️ DEBUG: AI service returned empty response")
             return
         
         # Extract content
         ai_content = response.get("content", "").strip()
-        
+
         # CRITICAL: Strip any "Atlas:" or "Name:" prefix that AI might add
         # AI sometimes includes the persona name in the response
         import re
         ai_content = re.sub(r'^(Atlas|atlas|ATLAS):\s*["\']?', '', ai_content, flags=re.IGNORECASE)
         ai_content = re.sub(r'^["\']', '', ai_content)  # Remove leading quotes
         ai_content = ai_content.strip()
-        
-        print(f"📝 DEBUG: AI content (cleaned): '{ai_content[:100]}...' (length: {len(ai_content)})")
-        
+
+        # CRITICAL: Filter out any SQL queries or system logs that AI might have generated
+        if _is_system_message(ai_content):
+            logger.warning(f"AI generated system message content for room {room_id}")
+            return
+
         # CRITICAL: Don't send empty messages
         if not ai_content or len(ai_content) == 0:
             logger.warning(f"AI returned empty content for room {room_id}")
-            print(f"❌ DEBUG: AI content is empty - NOT sending to users")
             return
-        
+
         # Use single AI persona - Atlas
         ai_persona = "Atlas"
-        
+
         # Create AI message
         ai_message = {
             "message_id": f"ai_msg_{int(datetime.utcnow().timestamp() * 1000)}",
@@ -575,16 +683,16 @@ async def generate_ai_response(room_id: str, trigger: dict):
             "ai_trigger": trigger.get("type"),
             "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
         # Add to conversation history
         await redis_client.add_message_to_history(room_id, ai_message)
-        
+
         # Broadcast to ALL users in room simultaneously
         logger.info(f"🤖 Broadcasting AI message to room {room_id}")
         await sio.emit("new_message", ai_message, room=room_id)
-        
+
         logger.info(f"✅ AI response sent to room {room_id}")
-        
+
     except Exception as e:
         logger.error(f"❌ Error generating AI response: {e}", exc_info=True)
 

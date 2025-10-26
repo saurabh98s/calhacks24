@@ -37,14 +37,32 @@ export class PlayerController {
     this.body = this.sprite.body as Phaser.Physics.Arcade.Body
     this.body.setCollideWorldBounds(true)
 
-    // Create name label
-    this.nameText = scene.add.text(x, y - 40, username, {
-      fontSize: '12px',
+    // Create improved name label with glowing effect
+    this.nameText = scene.add.text(x, y - 45, username, {
+      fontSize: '14px',
       color: '#ffffff',
-      backgroundColor: '#000000',
-      padding: { x: 4, y: 2 },
+      backgroundColor: '#00000099',
+      padding: { x: 8, y: 4 },
+      fontFamily: 'Arial, sans-serif',
+      fontStyle: 'bold'
     })
     this.nameText.setOrigin(0.5)
+    this.nameText.setStroke('#000000', 2)
+    this.nameText.setShadow(0, 2, '#000000', 2, false, true)
+    this.nameText.setDepth(1000) // Always on top
+    
+    // Add subtle idle animation to sprite (constrained to prevent overflow)
+    scene.tweens.add({
+      targets: this.sprite,
+      y: y - 2,  // Reduced from 3 to 2 to minimize movement
+      duration: 800,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1
+    })
+    
+    // Ensure sprite stays within bounds
+    this.sprite.setDepth(10)  // Always render on top but within canvas
   }
 
   update(cursors: Phaser.Types.Input.Keyboard.CursorKeys) {
@@ -91,8 +109,15 @@ export class PlayerController {
     // Apply velocity
     this.body.setVelocity(velocityX, velocityY)
 
-    // Update name position
-    this.nameText.setPosition(this.sprite.x, this.sprite.y - 40)
+    // Update name position to follow sprite smoothly
+    this.nameText.setPosition(this.sprite.x, this.sprite.y - 45)
+
+    // Add subtle scale effect when moving
+    if (velocityX !== 0 || velocityY !== 0) {
+      this.sprite.setScale(GAME_CONFIG.SPRITE_SCALE * 1.05)
+    } else {
+      this.sprite.setScale(GAME_CONFIG.SPRITE_SCALE)
+    }
 
     // Emit position updates (throttled)
     if ((velocityX !== 0 || velocityY !== 0) && this.moveCallback) {

@@ -50,7 +50,22 @@ async def lifespan(app: FastAPI):
             await initialize_default_rooms(session)
     except Exception as e:
         print(f"⚠️  Warning: Failed to initialize default rooms: {e}")
-    
+
+    # Initialize multi-agent service
+    try:
+        from app.services.multiagent_service import initialize_multiagent_service
+        multiagent_ready = await initialize_multiagent_service()
+        if multiagent_ready:
+            print("✅ Multi-agent service initialized and ready!")
+        else:
+            print("⚠️  Warning: Multi-agent service failed to initialize - running in fallback mode")
+    except ImportError as e:
+        print(f"⚠️  Warning: Multi-agent service not available (uagents not installed): {e}")
+        print("📝 Running in fallback mode without multi-agent features")
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to initialize multi-agent service: {e}")
+        print("📝 Running in fallback mode without multi-agent features")
+
     print("✅ ChatRealm backend started successfully!")
     
     yield

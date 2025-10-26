@@ -1,5 +1,5 @@
 """
-Trigger AI Service - Uses Janitor AI to intelligently decide when the main AI should respond
+Trigger AI Service - Uses Fetch.ai to intelligently decide when the main AI should respond
 This is the FIRST layer: analyzes conversation and decides if response is needed
 """
 import httpx
@@ -14,16 +14,16 @@ logger = logging.getLogger(__name__)
 
 class TriggerAIService:
     """
-    Smart trigger detection using Janitor AI
+    Smart trigger detection using Fetch.ai
     Analyzes conversation context and decides if the host AI should respond
     """
     
     def __init__(self):
-        self.janitor_api_key = settings.JANITOR_AI_API_KEY
-        self.janitor_base_url = "https://janitorai.com/hackathon"
+        self.fetchai_api_key = settings.ASI_ONE_API_KEY
+        self.fetchai_base_url = "https://api.asi1.ai/v1"
         
-        if not self.janitor_api_key:
-            logger.warning("Janitor AI API key not configured - trigger AI will use fallback logic")
+        if not self.fetchai_api_key:
+            logger.warning("Fetch.ai API key not configured - trigger AI will use fallback logic")
     
     async def should_ai_respond(
         self,
@@ -39,15 +39,15 @@ class TriggerAIService:
             - Dict with trigger info if AI should respond
         """
         
-        if not self.janitor_api_key:
+        if not self.fetchai_api_key:
             return self._fallback_trigger_logic(room_context, user_contexts, latest_message)
         
         try:
             # Build context for trigger AI
             context = self._build_trigger_context(room_context, user_contexts, latest_message)
             
-            # Call Janitor AI for trigger decision
-            decision = await self._call_janitor_trigger_ai(context)
+            # Call Fetch.ai for trigger decision
+            decision = await self._call_fetchai_trigger_ai(context)
             
             return decision
             
@@ -109,32 +109,33 @@ Rules:
         
         return context
     
-    async def _call_janitor_trigger_ai(self, context: str) -> Optional[Dict[str, Any]]:
+    async def _call_fetchai_trigger_ai(self, context: str) -> Optional[Dict[str, Any]]:
         """
-        Call Janitor AI streaming API for trigger decision with retry logic
+        Call Fetch.ai API for trigger decision with retry logic
         Retries up to 3 times with exponential backoff on failure
         """
         
         # Retry configuration
         MAX_RETRIES = 3
-        INITIAL_DELAY = 10  # seconds
+        INITIAL_DELAY = 2  # seconds (reduced since Fetch.ai is faster)
          
         for attempt in range(MAX_RETRIES):
             try:
                 if attempt > 0:
                     delay = INITIAL_DELAY * (2 ** (attempt - 1))  # Exponential backoff
                     print(f"🔄 DEBUG [Trigger AI]: Retry attempt {attempt + 1}/{MAX_RETRIES} after {delay}s delay...")
-                    logger.info(f"Retrying Janitor AI trigger call (attempt {attempt + 1}/{MAX_RETRIES})")
+                    logger.info(f"Retrying Fetch.ai trigger call (attempt {attempt + 1}/{MAX_RETRIES})")
                     await asyncio.sleep(delay)
                 
-                url = f"{self.janitor_base_url}/completions"
+                url = f"{self.fetchai_base_url}/chat/completions"
                 headers = {
-                    "Authorization": f"calhacks2047",
+                    "Authorization": f"Bearer {self.fetchai_api_key}",
                     "Content-Type": "application/json"
                 }
                 
                 # Build message for trigger AI - it acts as a meta-analyzer
                 payload = {
+                    "model": "asi1-mini",
                     "messages": [
                         {
                             "role": "system",
@@ -144,55 +145,39 @@ Rules:
                             "role": "user",
                             "content": context
                         }
-                    ]
+                    ],
+                    "temperature": 0.3  # Lower temperature for more consistent JSON output
                 }
-                
-                print(f"🎯 DEBUG [Trigger AI]: Calling Janitor AI (attempt {attempt + 1}/{MAX_RETRIES})...")
                 
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(url, json=payload, headers=headers)
-                    
+
                     if response.status_code != 200:
                         error_msg = f"Status {response.status_code} - {response.text}"
-                        print(f"❌ DEBUG [Trigger AI]: API error on attempt {attempt + 1}: {error_msg}")
-                        logger.error(f"Janitor AI trigger error (attempt {attempt + 1}/{MAX_RETRIES}): {error_msg}")
-                        
+                        logger.error(f"Fetch.ai trigger error (attempt {attempt + 1}/{MAX_RETRIES}): {error_msg}")
+
                         # If this is the last attempt, give up
                         if attempt == MAX_RETRIES - 1:
-                            print(f"❌ DEBUG [Trigger AI]: All {MAX_RETRIES} attempts failed")
                             return None
-                        
+
                         # Otherwise, retry
                         continue
-                    
-                    # Parse streaming response
-                    full_response = ""
-                    for line in response.text.split('\n'):
-                        if line.startswith('data: '):
-                            data_str = line[6:]  # Remove 'data: ' prefix
-                            if data_str.strip() == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                                content = data.get('content', '')
-                                full_response += content
-                            except json.JSONDecodeError:
-                                continue
-                    
-                    print(f"   Trigger AI response: '{full_response}'")
-                    
+
+                    # Parse JSON response (OpenAI-compatible format)
+                    data = response.json()
+
+                    if "choices" not in data or len(data["choices"]) == 0:
+                        if attempt == MAX_RETRIES - 1:
+                            return None
+                        continue
+
+                    full_response = data["choices"][0].get("message", {}).get("content", "")
+
                     # Check for empty response
                     if not full_response or full_response.strip() == "":
-                        print(f"⚠️ DEBUG [Trigger AI]: Empty response on attempt {attempt + 1}")
-                        
-                        # If this is the last attempt, give up
                         if attempt == MAX_RETRIES - 1:
-                            print(f"❌ DEBUG [Trigger AI]: All {MAX_RETRIES} attempts returned empty - using fallback")
-                            logger.error(f"Empty response from Janitor AI after {MAX_RETRIES} retries")
+                            logger.error(f"Empty response from Fetch.ai after {MAX_RETRIES} retries")
                             return None
-                        
-                        # Otherwise, retry
-                        print(f"🔄 DEBUG [Trigger AI]: Retrying due to empty response...")
                         continue
                     
                     # Parse the decision
@@ -229,7 +214,7 @@ Rules:
             except Exception as e:
                 error_message = str(e)
                 print(f"❌ DEBUG [Trigger AI]: Exception on attempt {attempt + 1}/{MAX_RETRIES}: {error_message}")
-                logger.error(f"Janitor AI trigger call failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                logger.error(f"Fetch.ai trigger call failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
                 
                 # If this is the last attempt, give up
                 if attempt == MAX_RETRIES - 1:
@@ -241,7 +226,7 @@ Rules:
                 continue
         
         # If we somehow exit the loop without returning, give up
-        logger.error(f"Exhausted all {MAX_RETRIES} retries for Janitor AI")
+        logger.error(f"Exhausted all {MAX_RETRIES} retries for Fetch.ai")
         return None
     
     def _fallback_trigger_logic(
@@ -251,7 +236,7 @@ Rules:
         latest_message: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        Simple fallback logic when Janitor AI is unavailable
+        Simple fallback logic when Fetch AI is unavailable
         """
         message = latest_message.get('message', '').lower()
         sender = latest_message.get('username', '')

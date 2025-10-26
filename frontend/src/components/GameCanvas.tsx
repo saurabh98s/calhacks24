@@ -78,8 +78,24 @@ export const GameCanvas = ({
   }, [])
 
   return (
-    <div className="w-full h-full flex items-center justify-center bg-gray-900">
-      <div id="game-canvas" className="rounded-lg overflow-hidden shadow-2xl" />
+    <div style={{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      position: 'relative'
+    }}>
+      <div 
+        id="game-canvas" 
+        style={{
+          overflow: 'hidden',
+          position: 'relative',
+          contain: 'layout style paint',
+          isolation: 'isolate'
+        }}
+      />
     </div>
   )
 }

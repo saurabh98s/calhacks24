@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "ChatRealm"
     APP_VERSION: str = "0.1.0"
-    DEBUG: bool = True
+    DEBUG: bool = False  # Disabled to prevent SQL logs in AI chat
     
     # Security
     SECRET_KEY: str
@@ -31,9 +31,11 @@ class Settings(BaseSettings):
         return v
     
     # AI Configuration (Optional - will use mock responses if not provided)
-    JANITOR_AI_API_KEY: str = ""
-    JANITOR_AI_BASE_URL: str = "https://janitorai.com/hackathon"
+    ASI_ONE_API_KEY: str = "sk_e804d3f936f8458e852087496c6a3f99518478c238434aa5b3db67957fed4b5e"  # Fetch.ai API key
     ANTHROPIC_API_KEY: str = ""
+
+    # Fetch.ai Agentverse Configuration
+    ORCHESTRATOR_ADDRESS: str = "agent1qwyxpqax4rn7p8g0u8h337hcc0lwt0jj8j093jdyfhy8xgcyjuc4jupdart"  # Main orchestrator agent
     
     # AI Response Configuration
     MAX_CONTEXT_TOKENS: int = 25000

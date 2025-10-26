@@ -1,5 +1,5 @@
 """
-AI Service - Handles communication with Janitor AI API and Anthropic Claude as fallback
+AI Service - Handles communication with Fetch.ai (asi1.ai) API and Anthropic Claude as fallback
 """
 import httpx
 import asyncio
@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class AIService:
-    """Handles AI inference with Janitor AI and Anthropic Claude fallback"""
+    """Handles AI inference with Fetch.ai and Anthropic Claude fallback"""
     
     def __init__(self):
-        self.janitor_api_key = settings.JANITOR_AI_API_KEY
-        self.janitor_base_url = settings.JANITOR_AI_BASE_URL
+        self.fetchai_api_key = settings.ASI_ONE_API_KEY
+        self.fetchai_base_url = "https://api.asi1.ai/v1"
         self.anthropic_api_key = settings.ANTHROPIC_API_KEY
         
         # Initialize Anthropic client only if API key is provided
@@ -29,28 +29,27 @@ class AIService:
     async def generate_response(
         self,
         messages: list[Dict[str, str]],
-        max_tokens: int = 500,
-        temperature: float = 0.8,
-        use_janitor: bool = False  # Disabled by default - set to True if using Janitor AI
+        max_tokens: int = 600,
+        temperature: float = 0.6,
+        use_fetchai: bool = True  # Enabled by default - uses Fetch.ai
     ) -> Optional[Dict[str, Any]]:
         """
-        Generate AI response using Janitor AI or Anthropic Claude
+        Generate AI response using Fetch.ai or Anthropic Claude
         
-        Based on user preference (memory), try Janitor AI first,
-        then validate with Claude if needed
+        Try Fetch.ai first for faster responses, fallback to Anthropic Claude if needed
         """
         
-        # Try Janitor AI first (only if enabled)
-        if use_janitor:
+        # Try Fetch.ai first (if enabled)
+        if use_fetchai:
             try:
-                response = await self._call_janitor_ai(messages, max_tokens, temperature)
+                response = await self._call_fetchai(messages, max_tokens, temperature)
                 if response:
-                    logger.info("✅ Janitor AI response generated")
+                    logger.info("✅ Fetch.ai response generated")
                     return response
             except Exception as e:
-                logger.warning(f"⚠️ Janitor AI not available, using Anthropic: {e}")
+                logger.warning(f"⚠️ Fetch.ai not available, using Anthropic: {e}")
         
-        # Use Anthropic Claude (primary AI service)
+        # Use Anthropic Claude (fallback AI service)
         try:
             response = await self._call_anthropic(messages, max_tokens, temperature)
             if response:
@@ -58,29 +57,30 @@ class AIService:
                 return response
         except Exception as e:
             logger.error(f"❌ Anthropic Claude failed: {e}")
-        
+
         return None
     
-    async def _call_janitor_ai(
+    async def _call_fetchai(
         self,
         messages: list[Dict[str, str]],
         max_tokens: int,
         temperature: float
     ) -> Optional[Dict[str, Any]]:
-        """Call Janitor AI API"""
+        """Call Fetch.ai (asi1.ai) API"""
         # Check if API key is configured
-        if not self.janitor_api_key or self.janitor_api_key == "your-janitor-ai-api-key-here":
-            logger.warning("Janitor AI API key not configured, skipping...")
+        if not self.fetchai_api_key or self.fetchai_api_key == "":
+            logger.warning("Fetch.ai API key not configured, skipping...")
             return None
         
-        url = f"{self.janitor_base_url}/completions"
+        url = f"{self.fetchai_base_url}/chat/completions"
         
         headers = {
-            "Authorization": f"Bearer {self.janitor_api_key}",
+            "Authorization": f"Bearer {self.fetchai_api_key}",
             "Content-Type": "application/json"
         }
         
         payload = {
+            "model": "asi1-mini",
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature
@@ -92,12 +92,12 @@ class AIService:
             
             data = response.json()
             
-            # Extract message content
+            # Extract message content (OpenAI-compatible format)
             if "choices" in data and len(data["choices"]) > 0:
                 content = data["choices"][0].get("message", {}).get("content", "")
                 return {
                     "content": content,
-                    "model": "janitor-ai",
+                    "model": data.get("model", "asi1-mini"),
                     "usage": data.get("usage", {})
                 }
         
@@ -127,53 +127,10 @@ class AIService:
             try:
                 if attempt > 0:
                     delay = INITIAL_DELAY * (2 ** (attempt - 1))  # Exponential backoff
-                    print(f"🔄 DEBUG: Retry attempt {attempt + 1}/{MAX_RETRIES} after {delay}s delay...")
                     logger.info(f"Retrying Anthropic API call (attempt {attempt + 1}/{MAX_RETRIES})")
                     await asyncio.sleep(delay)
                 
-                print(f"🤖 DEBUG [AI Service]: Calling Anthropic API")
-                print(f"   Input messages count: {len(messages)}")
-                print(f"   Max tokens: {max_tokens}")
-                print(f"   Temperature: {temperature}")
-                
-                # Convert messages to Anthropic format
-                # Separate system messages from user/assistant messages
-                system_message = ""
-                conversation_messages = []
-                
-                for i, msg in enumerate(messages):
-                    print(f"   Message {i}: role={msg['role']}, content_length={len(msg.get('content', ''))}")
-                    if msg["role"] == "system":
-                        # Combine all system messages
-                        system_message += msg["content"] + "\n\n"
-                    else:
-                        conversation_messages.append({
-                            "role": msg["role"],
-                            "content": msg["content"]
-                        })
-                
-                print(f"   System message length: {len(system_message)}")
-                print(f"   Conversation messages: {len(conversation_messages)}")
-                
-                # If no conversation messages, create a user message
-                if not conversation_messages:
-                    print(f"   ⚠️ No conversation messages - adding default")
-                    conversation_messages = [{"role": "user", "content": "Hello"}]
-                
-                # Ensure the conversation starts with a user message
-                if conversation_messages[0]["role"] != "user":
-                    print(f"   ⚠️ First message not user - inserting prompt")
-                    conversation_messages.insert(0, {"role": "user", "content": "Continue the conversation."})
-                
-                # Debug: Show first and last conversation messages
-                if conversation_messages:
-                    print(f"   First conv msg: {conversation_messages[0]['role']}: {conversation_messages[0]['content'][:100]}...")
-                    if len(conversation_messages) > 1:
-                        print(f"   Last conv msg: {conversation_messages[-1]['role']}: {conversation_messages[-1]['content'][:100]}...")
-            
-                # Call Anthropic API
-                # Using model specified by user: claude-sonnet-4-5-20250929
-                print(f"📞 DEBUG: Making API call to Claude (attempt {attempt + 1}/{MAX_RETRIES})...")
+                # Call Anthropic API with retry logic
                 response = await self.anthropic_client.messages.create(
                     model="claude-sonnet-4-5-20250929",  # User-specified Anthropic model
                     max_tokens=max_tokens,
@@ -181,41 +138,22 @@ class AIService:
                     system=system_message.strip() if system_message else None,
                     messages=conversation_messages
                 )
-                
-                print(f"✅ DEBUG: API call successful")
-                print(f"   Model: {response.model}")
-                print(f"   Stop reason: {response.stop_reason}")
-                print(f"   Content blocks: {len(response.content)}")
-                
+
                 # Extract content
                 content = ""
                 if response.content:
                     # Handle both text and other content types
-                    for i, block in enumerate(response.content):
+                    for block in response.content:
                         if hasattr(block, 'text'):
-                            block_text = block.text
-                            content += block_text
-                            print(f"   Block {i}: {len(block_text)} chars - '{block_text[:100]}...'")
-                        else:
-                            print(f"   Block {i}: Non-text block: {type(block)}")
-                
-                print(f"   Total content length: {len(content)}")
-                print(f"   Content: '{content[:200]}...'")
-                
+                            content += block.text
+
                 # Check for empty content
                 if not content or content.strip() == "":
-                    print(f"⚠️ DEBUG: Empty content returned from API on attempt {attempt + 1}")
-                    
-                    # If this is the last attempt, give up
                     if attempt == MAX_RETRIES - 1:
-                        print(f"❌ DEBUG: All {MAX_RETRIES} attempts failed - using mock response")
                         logger.error(f"Empty content from Anthropic API after {MAX_RETRIES} retries")
                         return await self._get_mock_response(messages)
-                    
-                    # Otherwise, retry
-                    print(f"🔄 DEBUG: Retrying due to empty content...")
                     continue
-                
+
                 # Success! Return the response
                 return {
                     "content": content,
@@ -225,21 +163,13 @@ class AIService:
                         "output_tokens": response.usage.output_tokens,
                     }
                 }
-            
+
             except Exception as e:
-                error_message = str(e)
-                print(f"❌ DEBUG: Anthropic API error on attempt {attempt + 1}/{MAX_RETRIES}: {error_message}")
                 logger.error(f"Anthropic API error (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
-                
+
                 # If this is the last attempt, give up
                 if attempt == MAX_RETRIES - 1:
-                    print(f"❌ DEBUG: All {MAX_RETRIES} attempts failed - using mock response")
-                    import traceback
-                    traceback.print_exc()
                     return await self._get_mock_response(messages)
-                
-                # Otherwise, retry
-                print(f"🔄 DEBUG: Will retry after backoff delay...")
                 continue
         
         # If we somehow exit the loop without returning, use mock response

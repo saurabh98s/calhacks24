@@ -39,7 +39,28 @@ class SocketService {
     this.socket.on('error', (data) => {
       console.error('❌ Socket error:', data)
     })
-    
+
+    // Multi-agent system events
+    this.socket.on('user_banned', (data) => {
+      console.log('🚫 User banned:', data)
+      this.emit('user_banned', data)
+    })
+
+    this.socket.on('user_muted', (data) => {
+      console.log('🔇 User muted:', data)
+      this.emit('user_muted', data)
+    })
+
+    this.socket.on('moderation_warning', (data) => {
+      console.log('⚠️ Moderation warning:', data)
+      this.emit('moderation_warning', data)
+    })
+
+    this.socket.on('crisis_resources', (data) => {
+      console.log('🚨 Crisis resources:', data)
+      this.emit('crisis_resources', data)
+    })
+
     // Register catch-all listener for debugging
     this.socket.onAny((eventName, ...args) => {
       console.log(`🔔 Socket.IO event received: ${eventName}`, args)

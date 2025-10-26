@@ -51,6 +51,8 @@ services:
       JANITOR_AI_API_KEY: ${JANITOR_AI_API_KEY:-}
       JANITOR_AI_BASE_URL: ${JANITOR_AI_BASE_URL:-https://janitorai.com/hackathon}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ASI_ONE_API_KEY: ${ASI_ONE_API_KEY:-sk_e804d3f936f8458e852087496c6a3f99518478c238434aa5b3db67957fed4b5e}
+      ORCHESTRATOR_ADDRESS: ${ORCHESTRATOR_ADDRESS:-agent1qwyxpqax4rn7p8g0u8h337hcc0lwt0jj8j093jdyfhy8xgcyjuc4jupdart}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:80}
     volumes:
       - ./backend:/app

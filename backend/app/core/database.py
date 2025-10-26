@@ -1,11 +1,16 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from app.config import settings
+import logging
 
-# Create async engine
+# Disable SQLAlchemy logging to prevent query logs from appearing in AI responses
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
+
+# Create async engine without echo to prevent SQL logs in chat
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=False,  # Always disable echo to prevent SQL logs in AI chat
     future=True
 )
 

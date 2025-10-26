@@ -201,18 +201,13 @@ class ContextManager:
         NEW: Uses conversation memory and advanced context tracking
         """
         try:
-            print(f"📝 DEBUG [build_ai_prompt]: Starting for room {room_id}")
-            
             from app.services.intelligent_prompt_builder import intelligent_prompt_builder
-            print(f"✅ DEBUG: intelligent_prompt_builder imported successfully")
-            
+
             # Get room state
             room_state = await redis_client.get_room_state(room_id)
-            print(f"🏠 DEBUG: Room state: {room_state is not None}")
-            
+
             if not room_state:
                 # Initialize basic room state if missing
-                print(f"⚠️ DEBUG: No room state found, using defaults")
                 room_state = {
                     "room_id": room_id,
                     "room_type": "private_room_default",
@@ -220,37 +215,29 @@ class ContextManager:
                     "users": [],
                     "dynamics": {}
                 }
-            
+
             # Get all user contexts
             user_ids = await redis_client.get_room_users(room_id)
-            print(f"👥 DEBUG: Found {len(user_ids)} users in room")
             user_states = []
-            
+
             for uid in user_ids:
                 context = await redis_client.get_user_context(uid)
                 if context:
                     user_states.append(context)
-                    print(f"   ✅ User {context.get('name', uid[:8])} context loaded")
-            
-            print(f"📊 DEBUG: Total user states: {len(user_states)}")
-            
+
             # Use intelligent prompt builder
             room_type = room_state.get("room_type", "private_room_default")
-            print(f"🎭 DEBUG: Room type: {room_type}")
-            
-            print(f"🚀 DEBUG: Calling intelligent_prompt_builder.build_prompt...")
+
             result = await intelligent_prompt_builder.build_prompt(
                 room_id=room_id,
                 room_type=room_type,
                 trigger=trigger,
                 user_states=user_states
             )
-            print(f"✅ DEBUG: Prompt built successfully, has {len(result.get('messages', []))} messages")
-            
+
             return result
-            
+
         except Exception as e:
-            print(f"❌ DEBUG [build_ai_prompt]: ERROR: {e}")
             import traceback
             traceback.print_exc()
             raise

@@ -8,6 +8,7 @@ import { ChatPanel } from '../components/ChatPanel'
 import { UserList } from '../components/UserList'
 import { ActiveUsersPanel } from '../components/ActiveUsersPanel'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { ModerationNotifications } from '../components/ModerationNotifications'
 
 import { useAuthStore } from '../store/authStore'
 import { useRoomStore } from '../store/roomStore'
@@ -112,9 +113,13 @@ export default function GameRoom() {
       console.log('Active users:', data.active_users)
       console.log('Active users metadata:', data.active_users_metadata)
       
-      // 🚫 DON'T LOAD OLD CONVERSATION HISTORY - FRESH START ONLY
-      console.log('🚫 Skipping conversation history for fresh start')
-      // Messages stay empty for fresh room experience
+      // Load conversation history so new users can see ongoing chat
+      if (data.conversation_history && Array.isArray(data.conversation_history)) {
+        console.log('📜 Loading conversation history:', data.conversation_history.length, 'messages')
+        setMessages(data.conversation_history)
+      } else {
+        console.log('📭 No conversation history available')
+      }
       
       // Build final active users list - ALWAYS include current user
       let finalActiveUsers: string[] = []
@@ -508,6 +513,9 @@ export default function GameRoom() {
           </motion.div>
         </div>
       </div>
+
+      {/* Multi-Agent Moderation Notifications */}
+      <ModerationNotifications />
     </div>
   )
 }

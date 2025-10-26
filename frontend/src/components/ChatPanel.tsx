@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Send, Smile } from 'lucide-react'
 import { Message } from '../types'
 import { motion, AnimatePresence } from 'framer-motion'
+import { socketService } from '../services/socketService'
 
 interface ChatPanelProps {
   messages: Message[]
@@ -186,6 +187,25 @@ export const ChatPanel = ({ messages, onSendMessage, onTyping, currentUsername, 
     }
   }
 
+  // Helper functions for multi-agent indicators
+  const getEmotionColor = (score: number): string => {
+    if (score >= 0.6) return '#4CAF50'  // Green for positive
+    if (score >= 0.2) return '#FFEB3B'  // Yellow for neutral
+    return '#F44336'  // Red for negative
+  }
+
+  const getEmotionEmoji = (score: number): string => {
+    if (score >= 0.6) return '😊'
+    if (score >= 0.2) return '😐'
+    return '😔'
+  }
+
+  const getToxicityColor = (score: number): string => {
+    if (score >= 0.7) return '#F44336'  // Red for high toxicity
+    if (score >= 0.4) return '#FF9800'  // Orange for moderate
+    return '#FFEB3B'  // Yellow for low
+  }
+
   // Render message with highlighted mentions
   const renderMessageWithMentions = (text: string) => {
     const mentionRegex = /@(\w+)/g
@@ -322,26 +342,59 @@ export const ChatPanel = ({ messages, onSendMessage, onTyping, currentUsername, 
                     }}>
                       {message.username}
                     </span>
-                    {message.message_type === 'ai' && (
-                      <span style={{
-                        fontSize: '8px',
-                        background: '#FFE66D',
-                        color: '#000',
-                        padding: '2px 6px',
-                        border: '2px solid #000'
-                      }}>
-                        🤖 AI
-                      </span>
-                    )}
+
+                    {/* Multi-agent indicators */}
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      {message.message_type === 'ai' && (
+                        <span style={{
+                          fontSize: '8px',
+                          background: '#FFE66D',
+                          color: '#000',
+                          padding: '2px 6px',
+                          border: '2px solid #000'
+                        }}>
+                          🤖 AI
+                        </span>
+                      )}
+
+                      {/* Emotion indicator */}
+                      {message.emotion && message.emotion_score !== undefined && (
+                        <span style={{
+                          fontSize: '8px',
+                          background: getEmotionColor(message.emotion_score),
+                          color: '#000',
+                          padding: '2px 6px',
+                          border: '2px solid #000',
+                          borderRadius: '8px'
+                        }}>
+                          {getEmotionEmoji(message.emotion_score)} {message.emotion}
+                        </span>
+                      )}
+
+                      {/* Toxicity indicator */}
+                      {message.toxicity_score !== undefined && message.toxicity_score > 0.3 && (
+                        <span style={{
+                          fontSize: '8px',
+                          background: getToxicityColor(message.toxicity_score),
+                          color: '#000',
+                          padding: '2px 6px',
+                          border: '2px solid #000',
+                          borderRadius: '8px'
+                        }}>
+                          ⚠️ {Math.round(message.toxicity_score * 100)}%
+                        </span>
+                      )}
+                    </div>
+
                     <span style={{
                       fontSize: '8px',
                       opacity: 0.7,
                       marginLeft: 'auto',
                       color: messageStyle.color
                     }}>
-                      {new Date(message.timestamp).toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
+                      {new Date(message.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit'
                       })}
                     </span>
                   </div>

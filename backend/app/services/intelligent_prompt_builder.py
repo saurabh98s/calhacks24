@@ -117,12 +117,15 @@ Be a great conversation partner who enhances the experience for everyone in the 
         
         # Get conversation history
         history = await redis_client.get_conversation_history(room_id, limit=15)
-        
+
+        # CRITICAL: Filter out any non-user messages that might contain system logs
+        filtered_history = self._filter_conversation_history(history)
+
         # Analyze what AI should focus on
         focus_areas = await self._determine_focus_areas(trigger, room_state, user_contexts)
-        
+
         # Build anti-repetition constraints
-        repetition_guard = await self._build_repetition_guard(history)
+        repetition_guard = await self._build_repetition_guard(filtered_history)
         
         # Construct the master prompt
         system_prompt = self._build_system_prompt(
@@ -134,9 +137,9 @@ Be a great conversation partner who enhances the experience for everyone in the 
             trigger=trigger
         )
         
-        # Format conversation history for AI
-        formatted_history = self._format_history_for_ai(history)
-        
+        # Format conversation history for AI (using filtered history)
+        formatted_history = self._format_history_for_ai(filtered_history)
+
         return {
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -145,6 +148,59 @@ Be a great conversation partner who enhances the experience for everyone in the 
             "max_tokens": self._determine_max_tokens(trigger),
             "temperature": self._determine_temperature(room_state, trigger)
         }
+
+    def _filter_conversation_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Filter out any messages that contain SQL queries, system logs, or debug information
+        Prevents SQL logs and system messages from appearing in AI responses
+        """
+        if not history:
+            return []
+
+        filtered_messages = []
+
+        # Patterns that indicate system/debug messages (not user conversation)
+        sql_patterns = [
+            'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'FROM ', 'WHERE ',
+            'sqlalchemy.engine', 'Engine.', 'BEGIN (implicit)', 'COMMIT',
+            'UPDATE users SET', 'UPDATE rooms SET', 'SELECT users.',
+            'SELECT rooms.', 'WHERE users.id =', 'WHERE rooms.id =',
+            '::UUID', '::VARCHAR', '::INTEGER'
+        ]
+
+        debug_patterns = [
+            'DEBUG', 'INFO', 'WARNING', 'ERROR', 'sqlalchemy.',
+            'Engine[', 'cached since', 'emitting event',
+            '🔍', '📊', '✅', '❌', '⚠️', '🎯', '🤖', '📝'
+        ]
+
+        for msg in history:
+            content = msg.get('message', msg.get('content', ''))
+
+            # Skip if message type is not user or ai (system messages)
+            if msg.get('message_type') not in ['user', 'ai']:
+                continue
+
+            # Skip if content is empty or just whitespace
+            if not content or not content.strip():
+                continue
+
+            content_str = str(content).upper()
+
+            # Check if this looks like a SQL query or system log
+            is_sql_or_debug = any(
+                pattern.upper() in content_str
+                for pattern in sql_patterns + debug_patterns
+            )
+
+            # Skip messages that contain SQL queries or debug logs
+            if is_sql_or_debug:
+                continue
+
+            # Only include legitimate user messages and AI responses
+            filtered_messages.append(msg)
+
+        return filtered_messages
     
     async def _build_user_contexts(
         self, 

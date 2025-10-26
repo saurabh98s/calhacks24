@@ -236,7 +236,7 @@ YOUR TASK:
             params['temperature'] = 0.8  # More creative
         
         elif trigger_type in ['question', 'direct_mention']:
-            params['max_tokens'] = 100
+            params['max_tokens'] = 200
             params['temperature'] = 0.6  # More focused
         
         elif trigger_type == 'moderate':

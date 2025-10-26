@@ -57,12 +57,50 @@ export interface Message {
   timestamp: string
   avatar_style?: string
   avatar_color?: string
+  // Multi-agent system metadata
+  emotion?: string
+  emotion_score?: number
+  toxicity_score?: number
+  metadata?: MultiAgentMetadata
 }
 
 // Position types for avatar movement
 export interface Position {
   x: number
   y: number
+}
+
+// Multi-agent system metadata
+export interface MultiAgentMetadata {
+  emotion?: {
+    emotion: string
+    score: number
+    confidence: number
+  }
+  toxicity?: {
+    score: number
+    severity: 'low' | 'medium' | 'high' | 'critical'
+    explanation: string
+    flagged_words?: string[]
+  }
+  wellness_score?: number
+  priority?: number
+  decision?: {
+    action: string
+    reasoning: string
+    confidence: number
+    all_candidates?: Array<{
+      agent: string
+      priority: number
+      action: string
+      confidence: number
+    }>
+  }
+  agents_involved?: string[]
+  processing_time_ms?: number
+  crisis_detected?: boolean
+  mute_duration?: number
+  warning_message?: string
 }
 
 // Socket events
@@ -76,6 +114,11 @@ export interface SocketEvents {
   avatar_moved: (data: AvatarMovedData) => void
   room_joined: (data: RoomJoinedData) => void
   error: (data: { message: string }) => void
+  // Multi-agent system events
+  user_banned: (data: UserModerationData) => void
+  user_muted: (data: UserModerationData) => void
+  moderation_warning: (data: ModerationWarningData) => void
+  crisis_resources: (data: CrisisResourcesData) => void
 }
 
 export interface UserJoinedData {
@@ -107,6 +150,36 @@ export interface RoomJoinedData {
   message: string
   conversation_history: Message[]
   active_users: string[]
+  active_users_metadata?: Array<{
+    user_id: string
+    username: string
+    avatar_style: string
+    avatar_color: string
+    mood_icon?: string
+  }>
+}
+
+// Multi-agent moderation events
+export interface UserModerationData {
+  user_id: string
+  reason: string
+  severity: 'medium' | 'high' | 'critical'
+  duration?: number  // For mute duration
+  timestamp: string
+}
+
+export interface ModerationWarningData {
+  message: string
+  severity: 'low' | 'medium' | 'high'
+  suggestions?: string[]
+  timestamp: string
+}
+
+export interface CrisisResourcesData {
+  message: string
+  resources: string[]
+  priority: 'critical'
+  timestamp: string
 }
 
 // Avatar styles
