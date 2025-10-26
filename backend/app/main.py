@@ -92,18 +92,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(rooms.router, prefix="/api/rooms", tags=["Rooms"])
-app.include_router(users.router, prefix="/api/users", tags=["Users"])
-
-# Mount Socket.IO
-socket_app = socketio.ASGIApp(
-    sio,
-    other_asgi_app=app,
-    socketio_path="/socket.io"
-)
-
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -122,6 +110,17 @@ async def root():
         "health": "/health"
     }
 
+# Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(rooms.router, prefix="/api/rooms", tags=["Rooms"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
+
+# Mount Socket.IO - IMPORTANT: Do this LAST and assign to a different variable
+socket_app = socketio.ASGIApp(
+    sio,
+    other_asgi_app=app,
+    socketio_path="/socket.io"
+)
 
 # Export the socket app as the main app
 app = socket_app

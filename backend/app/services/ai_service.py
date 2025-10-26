@@ -31,7 +31,7 @@ class AIService:
         messages: list[Dict[str, str]],
         max_tokens: int = 600,
         temperature: float = 0.6,
-        use_fetchai: bool = True  # Enabled by default - uses Fetch.ai
+        use_fetchai: bool = False  # Enabled by default - uses Fetch.ai
     ) -> Optional[Dict[str, Any]]:
         """
         Generate AI response using Fetch.ai or Anthropic Claude
@@ -130,14 +130,34 @@ class AIService:
                     logger.info(f"Retrying Anthropic API call (attempt {attempt + 1}/{MAX_RETRIES})")
                     await asyncio.sleep(delay)
                 
+                # Separate system message from conversation messages
+                system_message = None
+                conversation_messages = []
+                
+                # Extract system message and prepare conversation messages
+                for msg in messages:
+                    if msg.get("role") == "system":
+                        system_message = msg["content"]
+                    else:
+                        conversation_messages.append(msg)
+                
+                # If no user messages, create a minimal one
+                if not conversation_messages:
+                    conversation_messages = [{"role": "user", "content": "Continue the conversation naturally."}]
+                
                 # Call Anthropic API with retry logic
-                response = await self.anthropic_client.messages.create(
-                    model="claude-sonnet-4-5-20250929",  # User-specified Anthropic model
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    system=system_message.strip() if system_message else None,
-                    messages=conversation_messages
-                )
+                api_params = {
+                    "model": "claude-sonnet-4-5-20250929",
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": conversation_messages
+                }
+                
+                # Only add system if it exists
+                if system_message:
+                    api_params["system"] = system_message
+                
+                response = await self.anthropic_client.messages.create(**api_params)
 
                 # Extract content
                 content = ""

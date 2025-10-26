@@ -13,13 +13,7 @@ from app.services.context_manager import context_manager
 from app.services.ai_service import ai_service
 from app.services.user_service import user_service
 from app.services.room_service import room_service
-# Import multiagent service with fallback
-try:
-    from app.services.multiagent_service import get_multiagent_service
-except ImportError:
-    # Create a fallback function if multiagent service is not available
-    def get_multiagent_service():
-        return None
+from app.services.multiagent_service import get_multiagent_service
 from app.core.database import AsyncSessionLocal
 from app.utils.sentiment_analyzer import analyze_sentiment
 from app.services.trigger_ai_service import trigger_ai_service
@@ -332,18 +326,10 @@ async def send_message(sid, data):
         # Get user context for multi-agent system
         user_context_data = await redis_client.get_user_context(user_id)
 
-        # Process with multi-agent system (includes moderation, crisis detection, AI response)
-        multiagent = get_multiagent_service()
-        if multiagent is None:
-            # Fallback to basic processing if multi-agent system is not available
-            logger.warning("⚠️ Multi-agent service not available - using fallback processing")
-            result = {
-                "action": "allow",
-                "should_intervene": False,
-                "ai_response": "",
-                "metadata": {"fallback": True, "reason": "Multi-agent system unavailable"}
-            }
-        else:
+        # Process with multi-agent system if enabled
+        from app.config import settings
+        if settings.USE_MULTIAGENT:
+            multiagent = get_multiagent_service()
             result = await multiagent.process_message(
                 message_id=message_obj['message_id'],
                 user_id=user_id,
@@ -352,6 +338,105 @@ async def send_message(sid, data):
                 room_type=room_db.room_type,
                 user_context=user_context_data
             )
+        else:
+            # Intelligent intervention logic when multi-agent is disabled
+            logger.info("⚡ Multi-agent disabled - using AI-powered intervention logic")
+            
+            # Get recent conversation history for context
+            history = await redis_client.get_conversation_history(room_id, limit=15)
+            
+            # Build context for AI decision
+            recent_conversation = []
+            messages_since_ai = 0
+            for hist_msg in reversed(history[-10:]):
+                role = "AI" if hist_msg.get("message_type") == "ai" else hist_msg.get("username", "User")
+                content = hist_msg.get("message", "")
+                if content:
+                    recent_conversation.append(f"{role}: {content}")
+                if hist_msg.get("message_type") == "ai":
+                    break
+                if hist_msg.get("message_type") == "user":
+                    messages_since_ai += 1
+            
+            # Check for direct mentions (always respond)
+            ai_mentions = ['@atlas', '@ai', 'atlas', 'hey atlas', 'hi atlas']
+            message_lower = message.lower()
+            is_mentioned = any(mention in message_lower for mention in ai_mentions)
+            
+            should_respond = False
+            response_reason = ""
+            
+            if is_mentioned:
+                # Always respond when mentioned
+                should_respond = True
+                response_reason = "mentioned"
+            else:
+                # Use AI to decide if it should participate with FULL ROOM CONTEXT
+                conversation_context = "\n".join(recent_conversation[-5:]) if recent_conversation else "No recent messages"
+                
+                # Get room context description
+                from app.services.room_context_builder import get_room_ai_context
+                room_context_desc = get_room_ai_context(room_db.room_type, room_db.ai_persona)
+                
+                # Extract just the role/context summary (first 200 chars)
+                room_summary = room_context_desc.split('\n\n')[0] if room_context_desc else f"You are {room_db.ai_persona} in a {room_db.room_type} room."
+                
+                decision_prompt = f"""ROOM CONTEXT:
+{room_summary}
+
+RECENT CONVERSATION:
+{conversation_context}
+
+LATEST MESSAGE from {username}: {message}
+
+DECISION CRITERIA:
+- You are {room_db.ai_persona} in a {room_db.room_type.upper()} room
+- Should you respond based on your role and the room's purpose?
+- Does this message need your expertise or facilitation?
+- Have you been quiet too long? (last spoke {messages_since_ai} messages ago)
+- Would staying silent be better for the group dynamic?
+
+Respond ONLY with: YES or NO
+If YES, add reason after pipe |
+
+Format: YES|reason or NO"""
+
+                # Quick AI decision
+                decision_messages = [{"role": "user", "content": decision_prompt}]
+                decision_response = await ai_service.generate_response(decision_messages, max_tokens=50, temperature=0.3)
+                
+                if decision_response:
+                    decision_text = decision_response.get("content", "").strip().upper()
+                    if decision_text.startswith("YES"):
+                        should_respond = True
+                        # Extract reason if provided
+                        if "|" in decision_text:
+                            response_reason = decision_text.split("|", 1)[1].strip()
+                        else:
+                            response_reason = "ai_decision"
+                    else:
+                        should_respond = False
+                        response_reason = "ai_decided_not_to"
+                else:
+                    # Fallback: respond every 3-4 messages
+                    if messages_since_ai >= 3:
+                        should_respond = True
+                        response_reason = "conversation_flow"
+            
+            result = {
+                "action": "allow",
+                "should_intervene": should_respond,
+                "ai_response": "",  # Will be generated later if needed
+                "metadata": {
+                    "multiagent_disabled": True,
+                    "intervention_reason": response_reason,
+                    "messages_since_ai": messages_since_ai,
+                    "is_mentioned": is_mentioned,
+                    "intelligent_decision": True
+                }
+            }
+            
+            logger.info(f"🧠 AI decision: {should_respond} (reason: {response_reason}, messages_since_ai: {messages_since_ai})")
 
         # Extract results from multi-agent system
         action = result["action"]
@@ -431,8 +516,63 @@ async def send_message(sid, data):
         logger.info(f"✅ User message broadcast complete for room {room_id}")
 
         # Generate AI response if needed
-        if should_intervene and ai_response:
+        if should_intervene:
             logger.info(f"🤖 AI intervention required - generating response")
+            
+            # If ai_response is empty, generate it now
+            if not ai_response:
+                logger.info(f"💬 Generating AI response using AI service...")
+                
+                # Build context from recent messages
+                history = await redis_client.get_conversation_history(room_id, limit=10)
+                
+                # Build conversation context string
+                conversation_context = []
+                for hist_msg in reversed(history[-8:]):  # Last 8 messages for context
+                    role = "You (AI)" if hist_msg.get("message_type") == "ai" else hist_msg.get("username", "User")
+                    content = hist_msg.get("message", "")
+                    if content:
+                        conversation_context.append(f"{role}: {content}")
+                
+                # Add current message
+                conversation_context.append(f"{username}: {message}")
+                conversation_text = "\n".join(conversation_context)
+                
+                # Get room-specific system prompt with detailed context
+                from app.services.room_context_builder import get_room_system_prompt
+                system_msg = get_room_system_prompt(
+                    room_type=room_db.room_type,
+                    ai_persona=room_db.ai_persona,
+                    conversation_context=conversation_text
+                )
+                
+                # Build messages for AI - include system message properly
+                messages = [{"role": "system", "content": system_msg}]
+                
+                # Generate response with room-appropriate parameters
+                # D&D needs more creativity and length for narration
+                # Therapy needs balanced, measured responses
+                # AA needs warmth and empathy
+                room_params = {
+                    "dnd": {"temperature": 0.9, "max_tokens": 500},
+                    "alcoholics_anonymous": {"temperature": 0.7, "max_tokens": 350},
+                    "group_therapy": {"temperature": 0.7, "max_tokens": 350},
+                }
+                params = room_params.get(room_db.room_type, {"temperature": 0.7, "max_tokens": 300})
+                temperature = params["temperature"]
+                max_tokens = params["max_tokens"]
+                
+                response = await ai_service.generate_response(messages, max_tokens=max_tokens, temperature=temperature)
+                if response:
+                    ai_response = response.get("content", "")
+                else:
+                    # Fallback responses based on room type
+                    fallbacks = {
+                        "dnd": "The ancient halls echo with anticipation. What do you do next?",
+                        "alcoholics_anonymous": "Thank you for sharing. We're here to support each other, one day at a time.",
+                        "group_therapy": "I appreciate you opening up. How does everyone else feel about what was just shared?"
+                    }
+                    ai_response = fallbacks.get(room_db.room_type, "I'm here and listening. Please continue.")
 
             # Create AI message
             ai_message = {
@@ -444,7 +584,7 @@ async def send_message(sid, data):
                 "content": ai_response,
                 "message_type": "ai",
                 "ai_persona": room_db.ai_persona,
-                "ai_trigger": action,
+                "ai_trigger": metadata.get("intervention_reason", action),
                 "timestamp": datetime.utcnow().isoformat(),
                 "metadata": metadata  # Include full multi-agent metadata
             }

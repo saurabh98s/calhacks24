@@ -135,7 +135,7 @@ body {
   color: var(--pixel-accent);
   text-align: center;
   margin: 12px 0;
-  text-shadow: 2px 2px 0 #000;
+  /* text-shadow: 2px 2px 0 #000; */
 }
 
 /* 🎮 Pixel Art Input */

@@ -40,9 +40,9 @@ export default function TutorialHallway() {
 
     // Create doors for different room types - positioned for Mario-style walking
     const doors = [
-      { x: 150, y: 300, type: 'study', label: '🎓' },
-      { x: 300, y: 300, type: 'support', label: '🤝' },
-      { x: 450, y: 300, type: 'casual', label: '🎮' },
+      { x: 150, y: 300, type: 'dnd', label: '🎲' },
+      { x: 300, y: 300, type: 'aa', label: '🤝' },
+      { x: 450, y: 300, type: 'therapy', label: '💚' },
       { x: 600, y: 300, type: 'private', label: '🏠' },
     ]
 
@@ -78,10 +78,12 @@ export default function TutorialHallway() {
         navigate(`/room/${room.room_id}`)
       }, 500)
     } else {
-      console.log('No room found, using default')
-      setTimeout(() => {
-        navigate(`/room/${doorType}_default`)
-      }, 500)
+      console.log('No room found for types:', searchTypes)
+      // Fallback to first available room or private
+      const fallbackRoom = rooms.find(r => r.room_type === 'private') || rooms[0]
+      if (fallbackRoom) {
+        navigate(`/room/${fallbackRoom.room_id}`)
+      }
     }
   }
 
@@ -121,28 +123,28 @@ export default function TutorialHallway() {
 
   const roomTypes = [
     { 
-      type: 'study', 
-      icon: '🎓', 
-      label: 'STUDY GROUP', 
-      description: 'LEARN TOGETHER!',
+      type: 'dnd', 
+      icon: '🎲', 
+      label: 'DUNGEONS & DRAGONS', 
+      description: 'EPIC ADVENTURE!',
       color: '#4ECDC4',
-      searchTypes: ['study_group', 'study']
+      searchTypes: ['dnd', 'dungeons']
     },
     { 
-      type: 'support', 
+      type: 'aa', 
       icon: '🤝', 
-      label: 'SUPPORT CIRCLE', 
-      description: 'SHARE & CARE!',
+      label: 'ALCOHOLICS ANONYMOUS', 
+      description: 'SAFE RECOVERY!',
       color: '#95E1D3',
-      searchTypes: ['support_circle', 'support']
+      searchTypes: ['alcoholics_anonymous', 'aa']
     },
     { 
-      type: 'casual', 
-      icon: '🎮', 
-      label: 'CASUAL LOUNGE', 
-      description: 'CHILL & CHAT!',
+      type: 'therapy', 
+      icon: '💚', 
+      label: 'GROUP THERAPY', 
+      description: 'HEALING SPACE!',
       color: '#FFE66D',
-      searchTypes: ['casual_lounge', 'casual']
+      searchTypes: ['group_therapy', 'therapy']
     },
     { 
       type: 'private', 
@@ -309,7 +311,7 @@ export default function TutorialHallway() {
                     <div style={{
                       fontFamily: 'Press Start 2P, cursive',
                       fontSize: '10px',
-                      color: isSelected ? (room.type === 'casual' ? '#000' : '#FFF') : '#000',
+                      color: isSelected ? (room.type === 'therapy' ? '#000' : '#FFF') : '#000',
                       marginBottom: '8px',
                       lineHeight: '1.6',
                       textShadow: isSelected ? '2px 2px 0 #000' : 'none'
@@ -334,7 +336,7 @@ export default function TutorialHallway() {
                         marginTop: '8px',
                         fontSize: '8px',
                         fontFamily: 'Press Start 2P, cursive',
-                        color: isSelected ? (room.type === 'casual' ? '#000' : '#FFF') : '#666'
+                        color: isSelected ? (room.type === 'therapy' ? '#000' : '#FFF') : '#666'
                       }}>
                         👥 {roomData.active_users_count || 0} ONLINE
                       </div>

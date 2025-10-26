@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # Fetch.ai Agentverse Configuration
     ORCHESTRATOR_ADDRESS: str = "agent1qwyxpqax4rn7p8g0u8h337hcc0lwt0jj8j093jdyfhy8xgcyjuc4jupdart"  # Main orchestrator agent
+    USE_MULTIAGENT: bool = False  # Enable/disable multi-agent analysis
     
     # AI Response Configuration
     MAX_CONTEXT_TOKENS: int = 25000
