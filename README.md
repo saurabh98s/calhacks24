@@ -269,7 +269,7 @@ This project is developed for the hackathon.
 
 ## 🙏 Acknowledgments
 
-- **Janitor AI** for the AI inference API
+- **Fetch AI** for the AI inference API
 - **Anthropic** for Claude 3.5 Sonnet AI capabilities
 - **Phaser.js** for the excellent game engine
 - **FastAPI** for the modern Python framework
